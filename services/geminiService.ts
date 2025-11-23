@@ -14,11 +14,20 @@ export const analyzeTimesheet = async (records: DailyRecord[], balance: number, 
     try {
         // Initialize the client with the API key from the environment variable.
         // Guidelines state: The API key must be obtained exclusively from the environment variable process.env.API_KEY.
-        const apiKey = process.env.API_KEY;
+        let apiKey = process.env.API_KEY || '';
         
+        // Limpeza de segurança: remove espaços em branco que podem vir do copy-paste
+        apiKey = apiKey.trim();
+
         if (!apiKey) {
-            console.warn("API Key is missing. Configure API_KEY in your environment.");
-            return "IA não configurada. Por favor, adicione a API_KEY nas configurações.";
+            console.warn("API Key is missing. Configure VITE_API_KEY in Netlify.");
+            return "IA não configurada. Por favor, adicione a VITE_API_KEY no Netlify.";
+        }
+
+        // Validação básica do formato da chave Google
+        if (!apiKey.startsWith("AIza")) {
+            console.error("API Key seems invalid (does not start with AIza). Check Netlify configuration.");
+            return "Erro de configuração: A chave da IA parece incorreta. Verifique no Netlify.";
         }
 
         const ai = new GoogleGenAI({ apiKey });
