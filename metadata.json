@@ -1,7 +1,0 @@
-{
-  "name": "Nobel Petrópolis - Ponto Eletrônico",
-  "description": "Sistema inteligente de controle de ponto para Nobel Petrópolis com banco de horas e integração Google Sheets.",
-  "requestFramePermissions": [
-    "geolocation"
-  ]
-}
