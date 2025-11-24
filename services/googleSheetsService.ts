@@ -40,9 +40,11 @@ export const readSheetData = async (scriptUrl: string): Promise<DailyRecord[] | 
 export const syncRowToSheet = async (scriptUrl: string, record: DailyRecord, employeeName: string, currentTotalBalance: number) => {
   if (!scriptUrl) return;
   try {
+    // keepalive ensures the request outlives the page/component lifecycle
     await fetch(scriptUrl, {
         method: 'POST',
         mode: 'no-cors',
+        keepalive: true, 
         headers: {
             'Content-Type': 'text/plain;charset=utf-8',
         },
@@ -67,6 +69,7 @@ export const syncEmployeeToSheet = async (scriptUrl: string, employee: Employee)
         await fetch(scriptUrl, {
             method: 'POST',
             mode: 'no-cors',
+            keepalive: true,
             headers: {
                 'Content-Type': 'text/plain;charset=utf-8',
             },

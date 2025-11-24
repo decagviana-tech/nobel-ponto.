@@ -43,6 +43,7 @@ const App: React.FC = () => {
       const config = getGoogleConfig();
       if (!config.enabled || !config.scriptUrl) return;
 
+      // Initial sync (Soft)
       performSync(config.scriptUrl, true, false);
 
       const interval = setInterval(() => {
@@ -90,7 +91,9 @@ const App: React.FC = () => {
   const handleManualSync = () => {
       const config = getGoogleConfig();
       if (config.enabled && config.scriptUrl) {
-          performSync(config.scriptUrl, false, true);
+          // FIX: Changed from true (Hard Sync) to false (Soft Sync)
+          // This prevents local data from being wiped if the sheet hasn't received the update yet.
+          performSync(config.scriptUrl, false, false);
       } else {
           alert("Configure a URL do Script nas Configurações primeiro.");
       }
@@ -157,13 +160,10 @@ const App: React.FC = () => {
 
   const currentEmployee = employees.find(e => e.id === currentEmployeeId) || employees[0];
 
-  // --- LÓGICA DE SEGURANÇA CORRIGIDA ---
+  // --- LÓGICA DE SEGURANÇA ---
   const handleNavClick = (mode: ViewMode) => {
     setIsMobileMenuOpen(false);
 
-    // REGRA DE OURO (RESGATE): 
-    // Se estiver tentando acessar CONFIGURAÇÕES e a planilha estiver DESCONECTADA,
-    // Libera o acesso IMEDIATAMENTE. Isso impede o Deadlock.
     const config = getGoogleConfig();
     const isDisconnected = !config.enabled || !config.scriptUrl;
     
@@ -172,39 +172,28 @@ const App: React.FC = () => {
         return;
     }
     
-    // Áreas que exigem autenticação
     const restrictedViews = [ViewMode.SHEET, ViewMode.EMPLOYEES, ViewMode.SETTINGS];
     
     if (restrictedViews.includes(mode)) {
-        
-        // REGRA DO FUNCIONÁRIO PADRÃO:
-        // Se for o ID '1', ele é considerado o ADMIN LOCAL de emergência.
-        // Ele sempre pode acessar para configurar, mesmo sem senha.
         if (currentEmployee?.id === '1') {
             setCurrentView(mode);
             return;
         }
 
-        // Verifica se o funcionário tem um PIN configurado
-        // Converte para String forçadamente para evitar erro com números do Excel
         const pinStr = String(currentEmployee?.pin || '');
         const hasPin = pinStr.length > 0 && pinStr !== '0000';
         
         if (hasPin) {
-            // Tem PIN: Pede a senha
             setPendingView(mode);
             setIsPinModalOpen(true);
         } else {
-            // NÃO TEM PIN (E não é o Funcionário Padrão):
             if (mode === ViewMode.SETTINGS || mode === ViewMode.EMPLOYEES) {
                 alert(`ACESSO NEGADO.\n\nO usuário "${currentEmployee?.name}" não possui um PIN configurado.\n\nPor favor, acesse com um usuário Gerente ou use o Funcionário Padrão para configurar.`);
             } else {
-                // Planilha sem senha (comportamento legado para visualizar)
                 setCurrentView(mode);
             }
         }
     } else {
-        // Áreas públicas (Relógio, Dashboard, IA)
         setCurrentView(mode);
     }
   };
@@ -218,7 +207,6 @@ const App: React.FC = () => {
   };
 
   const NavButton = ({ mode, label, icon: Icon }: { mode: ViewMode, label: string, icon: any }) => {
-     // Mostra cadeado se a área for restrita
      const isRestricted = [ViewMode.SHEET, ViewMode.EMPLOYEES, ViewMode.SETTINGS].includes(mode);
      
      return (
@@ -243,7 +231,6 @@ const App: React.FC = () => {
   return (
     <div className="min-h-screen bg-slate-50 flex flex-col md:flex-row print:bg-white print:block">
       
-      {/* MODAL DE PIN NO TOPO DA ÁRVORE */}
       <PinModal 
         isOpen={isPinModalOpen}
         onClose={() => setIsPinModalOpen(false)}
@@ -251,7 +238,6 @@ const App: React.FC = () => {
         correctPin={String(currentEmployee?.pin || '')}
       />
 
-      {/* Mobile Header - Hidden on Print */}
       <div className="md:hidden bg-white p-3 border-b border-slate-200 flex justify-between items-center sticky top-0 z-40 shadow-sm print:hidden">
         <div className="flex items-center gap-2 font-bold text-brand-600">
           <div className="bg-brand-600 p-1.5 rounded-lg">
@@ -283,7 +269,6 @@ const App: React.FC = () => {
         </div>
       </div>
 
-      {/* Sidebar Navigation - Hidden on Print */}
       <div className={`
         fixed inset-0 z-30 bg-white md:relative md:flex flex-col w-full md:w-64 border-r border-slate-200 p-4 h-screen
         transition-transform duration-300 ease-in-out print:hidden
