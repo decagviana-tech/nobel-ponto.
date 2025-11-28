@@ -1,4 +1,3 @@
-
 import { DailyRecord, Employee, GoogleConfig } from '../types';
 import { calculateDailyStats } from '../utils';
 
@@ -6,11 +5,29 @@ const STORAGE_KEY_RECORDS = 'smartpoint_records_v2';
 const STORAGE_KEY_EMPLOYEES = 'smartpoint_employees_v1';
 const STORAGE_KEY_CONFIG = 'smartpoint_script_config_v1';
 
+// Declare process.env for TypeScript visibility in this file
+declare const process: {
+  env: {
+    GOOGLE_SCRIPT_URL?: string;
+  };
+};
+
 // --- Configuration ---
 
 export const getGoogleConfig = (): GoogleConfig => {
   const data = localStorage.getItem(STORAGE_KEY_CONFIG);
-  return data ? JSON.parse(data) : { scriptUrl: '', enabled: false };
+  if (data) return JSON.parse(data);
+
+  // Fallback: Check Environment Variable (Netlify)
+  // This prevents the app from disconnecting if the browser wipes local storage
+  const envUrl = process.env.GOOGLE_SCRIPT_URL;
+  if (envUrl) {
+      const autoConfig = { scriptUrl: envUrl, enabled: true };
+      saveGoogleConfig(autoConfig); // Save to local storage for next time
+      return autoConfig;
+  }
+
+  return { scriptUrl: '', enabled: false };
 };
 
 export const saveGoogleConfig = (config: GoogleConfig) => {
