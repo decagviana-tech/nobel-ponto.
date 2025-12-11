@@ -23,37 +23,54 @@ export const timeStringToMinutes = (timeStr: string): number | null => {
   // Limpeza de segurança caso venha data ISO
   const cleanStr = normalizeTimeFromSheet(timeStr);
   
+  // Se após limpar ainda não for HH:mm, retorna null para não quebrar conta
+  if (!/^\d{1,2}:\d{2}$/.test(cleanStr)) return null;
+
   const [h, m] = cleanStr.split(':').map(Number);
   if (isNaN(h) || isNaN(m)) return null;
   return h * 60 + m;
 };
 
-// NOVA FUNÇÃO: Limpa strings como "1899-12-30T12:19:28.000Z" para "12:19"
+// FUNÇÃO DE LIMPEZA REFORÇADA (ANTI-1899)
 export const normalizeTimeFromSheet = (val: any): string => {
   if (!val) return '';
   const str = String(val).trim();
   
-  // Se já for HH:mm (ex: 09:00 ou 9:00)
-  if (/^\d{1,2}:\d{2}$/.test(str)) return str.padStart(5, '0');
+  // 1. Se já for HH:mm simples (ex: "09:00" ou "9:00")
+  if (/^\d{1,2}:\d{2}$/.test(str)) {
+      return str.padStart(5, '0'); // Garante 09:00
+  }
 
-  // Se for formato ISO do Google (contém T)
+  // 2. Se for Data ISO maluca do Google (ex: "1899-12-30T14:19:28.000Z")
+  // O Google Sheets as vezes manda com fuso horário zoado. 
+  // O ideal é pegar a hora que está VISIVEL na string se possível.
   if (str.includes('T')) {
-      const parts = str.split('T');
-      if (parts.length > 1) {
-          // Pega a parte da hora "12:19:28.000Z" e corta os primeiros 5 chars
-          return parts[1].substring(0, 5);
+      // Tenta extrair o padrão HH:mm logo após o T
+      const timeMatch = str.match(/T(\d{2}:\d{2})/);
+      if (timeMatch && timeMatch[1]) {
+          // Ajuste fino: Se a planilha está mandando UTC e o Brasil é -3, 
+          // as vezes o Google manda a hora certa mas com o Z no final.
+          // Vamos confiar cegamente nos numeros que vieram por enquanto.
+          return timeMatch[1];
       }
   }
-  
-  // Fallback: se for muito longo, tenta cortar
-  if (str.length > 5 && str.includes(':')) {
-      return str.substring(0, 5);
-  }
 
-  return str;
+  // 3. Fallback: Tenta criar um objeto Date e extrair a hora local
+  // CUIDADO: Isso pode dar problemas de fuso horário (3 horas de diferença)
+  const dateObj = new Date(str);
+  if (!isNaN(dateObj.getTime()) && str.length > 8) {
+     // Se for uma data válida, pegamos a hora UTC para evitar conversão de browser
+     const h = dateObj.getUTCHours().toString().padStart(2, '0');
+     const m = dateObj.getUTCMinutes().toString().padStart(2, '0');
+     return `${h}:${m}`;
+  }
+  
+  // 4. Se for lixo ou texto, retorna vazio
+  return '';
 };
 
 export const calculateDailyStats = (record: DailyRecord, dailyTarget: number = 480): { total: number, balance: number } => {
+  // Garante que estamos usando valores limpos
   const entry = timeStringToMinutes(record.entry);
   const lunchStart = timeStringToMinutes(record.lunchStart);
   const lunchEnd = timeStringToMinutes(record.lunchEnd);
@@ -70,9 +87,6 @@ export const calculateDailyStats = (record: DailyRecord, dailyTarget: number = 4
     } else if (exit !== null && lunchStart === null) {
         // Only Entry and Exit
         worked += Math.max(0, exit - entry);
-    } else {
-        // Still working first shift
-        // We do not add to 'worked' display until segment is done to keep logic simple
     }
   }
 
@@ -91,11 +105,10 @@ export const calculateDailyStats = (record: DailyRecord, dailyTarget: number = 4
   }
 
   // BALANCE CALCULATION
-  // We strictly return 0 balance if the employee hasn't clocked out (Exit is null).
-  // This prevents showing "Debt: -8h" while the employee is just starting their day.
   let balance = 0;
   
-  if (exit !== null) {
+  // Só calcula saldo se tiver saído OU se tiver trabalhado muito (esqueceram de bater saida)
+  if (exit !== null || worked > 600) {
       balance = worked - dailyTarget;
   }
 

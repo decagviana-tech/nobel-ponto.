@@ -4,15 +4,17 @@ import { getGoogleConfig, saveGoogleConfig, getLocationConfig, saveLocationConfi
 import { readSheetData, readEmployeesFromSheet, syncRowToSheet } from '../services/googleSheetsService';
 import { mergeExternalRecords, mergeExternalEmployees } from '../services/storageService';
 import { GoogleConfig } from '../types';
-import { Save, Database, CheckCircle, Link, Trash2, HelpCircle, Activity, Lock, MapPin, Building2, DownloadCloud, UploadCloud, Code, Copy, X, AlertTriangle } from 'lucide-react';
+import { Save, Database, CheckCircle, Link, Trash2, HelpCircle, Activity, Lock, MapPin, Building2, DownloadCloud, UploadCloud, Code, Copy, X, AlertTriangle, RefreshCw } from 'lucide-react';
 
 interface Props {
   onConfigSaved: () => void;
 }
 
+const CURRENT_SCRIPT_VERSION = '2.1';
+
 const APPS_SCRIPT_CODE = `
 // ==========================================
-// CÓDIGO OFICIAL - NOBEL PONTO (VERSÃO 2.0)
+// CÓDIGO OFICIAL - NOBEL PONTO (VERSÃO ${CURRENT_SCRIPT_VERSION})
 // ==========================================
 
 function doGet(e) {
@@ -20,7 +22,11 @@ function doGet(e) {
   const sheet = SpreadsheetApp.getActiveSpreadsheet().getActiveSheet();
   
   if (action === 'test') {
-    return ContentService.createTextOutput(JSON.stringify({ status: 'success', message: 'Conexão ativa!' })).setMimeType(ContentService.MimeType.JSON);
+    return ContentService.createTextOutput(JSON.stringify({ 
+      status: 'success', 
+      message: 'Conexão ativa!',
+      version: '${CURRENT_SCRIPT_VERSION}'
+    })).setMimeType(ContentService.MimeType.JSON);
   }
 
   if (action === 'getEmployees') {
@@ -317,7 +323,12 @@ export const Settings: React.FC<Props> = ({ onConfigSaved }) => {
         const data = await response.json();
         
         if (data.status === 'success') {
-            alert('✅ Conexão Bem Sucedida!\n\nO servidor respondeu: ' + data.message);
+            if (data.version !== CURRENT_SCRIPT_VERSION) {
+                alert(`⚠️ ALERTA DE VERSÃO\n\nA conexão funcionou, mas o código no Google está DESATUALIZADO.\n\nVersão do App: ${CURRENT_SCRIPT_VERSION}\nVersão no Google: ${data.version || 'Antiga'}\n\nPor favor, clique em "Ver Código do Script", copie o novo código e cole no Google Apps Script.`);
+                setShowScriptCode(true);
+            } else {
+                alert('✅ Conexão Perfeita!\n\nO servidor respondeu e está na versão correta (' + data.version + ').');
+            }
         } else {
             alert('⚠️ O servidor respondeu, mas com um erro: ' + (data.message || 'Erro desconhecido'));
         }
@@ -344,7 +355,7 @@ export const Settings: React.FC<Props> = ({ onConfigSaved }) => {
                   <div className="p-4 border-b border-slate-200 flex justify-between items-center bg-slate-50 rounded-t-2xl">
                       <h3 className="font-bold text-slate-800 flex items-center gap-2">
                           <Code size={20} className="text-indigo-600" />
-                          Código do Servidor (Apps Script) v2.0
+                          Código do Servidor (Apps Script) v{CURRENT_SCRIPT_VERSION}
                       </h3>
                       <button onClick={() => setShowScriptCode(false)} className="p-2 hover:bg-slate-200 rounded-full">
                           <X size={20} />
@@ -411,7 +422,10 @@ export const Settings: React.FC<Props> = ({ onConfigSaved }) => {
                     <div className="flex gap-3">
                         <Code className="text-indigo-600 shrink-0" size={20} />
                         <div>
-                            <h4 className="text-sm font-bold text-indigo-900 mb-1">Passo 1: Código do Servidor</h4>
+                            <div className="flex items-center gap-2 mb-1">
+                                <h4 className="text-sm font-bold text-indigo-900">Passo 1: Código do Servidor</h4>
+                                <span className="bg-indigo-200 text-indigo-800 text-[10px] px-1.5 py-0.5 rounded-full font-bold">v{CURRENT_SCRIPT_VERSION}</span>
+                            </div>
                             <p className="text-xs text-indigo-700 mb-3">
                                 Este código corrige o erro das datas (1899) e formatação.
                             </p>

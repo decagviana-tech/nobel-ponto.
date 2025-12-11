@@ -3,7 +3,7 @@ import React, { useState, useEffect } from 'react';
 import { DailyRecord, TimeRecordType } from '../types';
 import { getCurrentTime, getTodayString, formatTime } from '../utils';
 import { updateRecord, getTodayRecord, getBankBalance, getLocationConfig } from '../services/storageService';
-import { Coffee, Utensils, LogOut, LogIn, MapPin, Wallet, AlertTriangle, Loader2, CheckCircle2, Building2 } from 'lucide-react';
+import { Coffee, Utensils, LogOut, LogIn, MapPin, Wallet, AlertTriangle, Loader2, CheckCircle2, Building2, RefreshCw, Sparkles, Navigation } from 'lucide-react';
 
 interface Props {
   onUpdate: (record: DailyRecord) => void;
@@ -24,6 +24,7 @@ export const TimeClock: React.FC<Props> = ({ onUpdate, employeeId }) => {
   const [isPunching, setIsPunching] = useState<string | null>(null); // Stores the type being punched
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
   const [isUsingFixedLocation, setIsUsingFixedLocation] = useState(false);
+  const [isLocating, setIsLocating] = useState(false);
 
   useEffect(() => {
     const timer = setInterval(() => setCurrentTime(getCurrentTime()), 1000);
@@ -34,23 +35,30 @@ export const TimeClock: React.FC<Props> = ({ onUpdate, employeeId }) => {
     const today = getTodayString();
     setTodayRecord(getTodayRecord(employeeId, today));
     setTotalBankBalance(getBankBalance(employeeId));
+    refreshLocation();
+  }, [employeeId]);
 
+  const refreshLocation = () => {
     // CHECK LOCATION STRATEGY
     const locConfig = getLocationConfig();
+    setIsLocating(true);
 
     if (locConfig.useFixed && locConfig.fixedName) {
         setIsUsingFixedLocation(true);
         setLocationName(locConfig.fixedName);
         setCoords({ lat: 0, lng: 0 }); // Dummy coords for fixed location
+        setIsLocating(false);
     } else {
         setIsUsingFixedLocation(false);
-        // Real Geolocation Implementation
+        setLocationName('Buscando satélites...');
+        
         if (navigator.geolocation) {
           navigator.geolocation.getCurrentPosition(
             async (position) => {
               const lat = position.coords.latitude;
               const lng = position.coords.longitude;
               setCoords({ lat, lng });
+              setIsLocating(false);
               
               // 1. Define coordenadas como fallback imediato
               const rawCoords = `${lat.toFixed(4)}, ${lng.toFixed(4)}`;
@@ -83,33 +91,34 @@ export const TimeClock: React.FC<Props> = ({ onUpdate, employeeId }) => {
               }
             }, 
             (error) => {
-              // Handle error gracefully without spamming console warnings
+              setIsLocating(false);
               let msg = 'Localização indisponível';
               
               if (error.code === 1) msg = 'Permissão de local negada';
               else if (error.code === 2) msg = 'GPS indisponível';
-              else if (error.code === 3) msg = 'Sem sinal de GPS (PC)';
+              else if (error.code === 3) msg = 'Sem sinal de GPS';
               
               setLocationName(msg);
               setCoords(null);
             },
             { 
-                enableHighAccuracy: false, // Changed to false for better desktop compatibility (IP based)
-                timeout: 15000, 
-                maximumAge: 60000 
+                enableHighAccuracy: true, 
+                timeout: 20000, 
+                maximumAge: 10000 
             }
           );
         } else {
+          setIsLocating(false);
           setLocationName('Geolocalização não suportada');
         }
     }
-  }, [employeeId]);
+  };
 
   const handlePunch = async (type: TimeRecordType) => {
     setIsPunching(type);
     
     // Simulate a small network delay for better UX feel
-    await new Promise(resolve => setTimeout(resolve, 600));
+    await new Promise(resolve => setTimeout(resolve, 800));
 
     const now = getCurrentTime();
     
@@ -128,7 +137,7 @@ export const TimeClock: React.FC<Props> = ({ onUpdate, employeeId }) => {
     onUpdate(newRecord);
     
     setIsPunching(null);
-    setSuccessMsg(`Registro de ${getLabel(type)} realizado!`);
+    setSuccessMsg(`Registro de ${getLabel(type)} realizado com sucesso!`);
     setTimeout(() => setSuccessMsg(null), 3000);
   };
 
@@ -148,6 +157,17 @@ export const TimeClock: React.FC<Props> = ({ onUpdate, employeeId }) => {
     }
   };
 
+  // --- INTELLIGENCE LOGIC ---
+  const getNextAction = (): TimeRecordType | null => {
+      if (!todayRecord.entry) return 'entry';
+      if (!todayRecord.lunchStart) return 'lunchStart';
+      if (!todayRecord.lunchEnd) return 'lunchEnd';
+      if (!todayRecord.exit) return 'exit';
+      return null;
+  };
+
+  const nextAction = getNextAction();
+
   const ActionButton = ({ 
     type, 
     label, 
@@ -161,31 +181,41 @@ export const TimeClock: React.FC<Props> = ({ onUpdate, employeeId }) => {
   }) => {
     const isDone = getButtonStatus(type);
     const isLoading = isPunching === type;
+    const isNext = nextAction === type;
     
     return (
       <button
         onClick={() => handlePunch(type)}
         disabled={isDone || isPunching !== null}
         className={`
-          relative flex flex-col items-center justify-center p-6 rounded-2xl shadow-lg transition-all transform 
+          relative flex flex-col items-center justify-center p-6 rounded-2xl shadow-lg transition-all duration-300 transform 
           ${isDone 
             ? 'bg-slate-100 text-slate-400 cursor-not-allowed shadow-none border border-slate-200' 
             : isLoading 
                 ? 'bg-slate-50 scale-95 ring-2 ring-brand-500' 
-                : `${colorClass} hover:scale-105 active:scale-95`
+                : isNext
+                    ? `${colorClass} scale-[1.02] ring-4 ring-offset-2 ring-brand-100 z-10 hover:scale-105 active:scale-95`
+                    : 'bg-white text-slate-600 border border-slate-200 hover:border-brand-200 hover:bg-slate-50 hover:scale-105 active:scale-95'
           }
         `}
       >
         {isLoading ? (
             <Loader2 size={32} className="animate-spin text-brand-600 mb-2" />
         ) : (
-            <Icon size={32} className="mb-2" />
+            <Icon size={32} className={`mb-2 ${isNext && !isDone ? 'animate-bounce' : ''}`} />
         )}
         
-        <span className="font-bold text-lg">{isLoading ? 'Registrando...' : label}</span>
+        <span className={`font-bold text-lg ${!isDone && !isNext ? 'text-slate-600' : ''}`}>{isLoading ? 'Registrando...' : label}</span>
+        
+        {isNext && !isLoading && !isDone && (
+            <span className="absolute -top-3 left-1/2 -translate-x-1/2 bg-slate-800 text-white text-[10px] uppercase font-bold px-2 py-1 rounded-full shadow-md whitespace-nowrap flex items-center gap-1">
+                <Sparkles size={10} className="text-amber-400" />
+                Sugerido
+            </span>
+        )}
         
         {isDone && (
-            <span className="absolute bottom-2 text-xs font-mono bg-white/50 px-2 py-0.5 rounded-full">
+            <span className="absolute bottom-2 text-xs font-mono bg-white/50 px-2 py-0.5 rounded-full text-slate-500 font-bold border border-slate-200">
                 {todayRecord[type as keyof DailyRecord]}
             </span>
         )}
@@ -201,13 +231,15 @@ export const TimeClock: React.FC<Props> = ({ onUpdate, employeeId }) => {
   };
 
   return (
-    <div className="flex flex-col items-center w-full max-w-4xl mx-auto p-4 animate-fade-in relative">
+    <div className="flex flex-col items-center w-full max-w-4xl mx-auto p-4 animate-fade-in relative pb-12">
       
       {/* Success Toast */}
       {successMsg && (
-          <div className="absolute top-0 z-50 animate-bounce bg-emerald-600 text-white px-6 py-3 rounded-full shadow-xl flex items-center gap-2">
-              <CheckCircle2 size={20} />
-              <span className="font-bold">{successMsg}</span>
+          <div className="fixed top-20 left-1/2 -translate-x-1/2 z-[100] animate-bounce bg-emerald-600 text-white px-6 py-3 rounded-full shadow-2xl flex items-center gap-3 border-2 border-white/20">
+              <div className="bg-white/20 p-1 rounded-full">
+                <CheckCircle2 size={24} className="text-white" />
+              </div>
+              <span className="font-bold text-lg">{successMsg}</span>
           </div>
       )}
 
@@ -219,39 +251,53 @@ export const TimeClock: React.FC<Props> = ({ onUpdate, employeeId }) => {
         <span>Banco de Horas: {formatTime(totalBankBalance)}</span>
       </div>
 
-      <div className="text-center mb-8">
+      <div className="text-center mb-8 w-full max-w-md">
         <h3 className="text-slate-400 font-medium text-lg mb-1">{getGreeting()}!</h3>
-        <h2 className="text-7xl font-black text-slate-800 tracking-tighter font-mono mb-2">
+        <h2 className="text-7xl font-black text-slate-800 tracking-tighter font-mono mb-4">
           {currentTime}
         </h2>
-        <p className="text-slate-500 flex items-center justify-center gap-2 mb-2 font-medium">
-          {new Date().toLocaleDateString('pt-BR', { weekday: 'long', day: 'numeric', month: 'long' })}
-        </p>
         
-        <div 
-            className={`inline-flex items-center gap-2 px-3 py-1 rounded-full text-xs font-mono border max-w-md truncate transition-colors
-            ${isUsingFixedLocation 
-                ? 'bg-slate-100 text-slate-700 border-slate-300' 
-                : coords ? 'bg-blue-50 text-blue-700 border-blue-200' : 'bg-amber-50 text-amber-700 border-amber-200'}
-            `}
-            title={coords ? `Coordenadas: ${coords.lat}, ${coords.lng}` : 'Localização'}
-        >
-            {isUsingFixedLocation ? <Building2 size={12} className="shrink-0" /> : <MapPin size={12} className="shrink-0" />}
-            <span className="truncate">{locationName}</span>
-            {isUsingFixedLocation && <span className="text-[9px] bg-slate-200 px-1 rounded ml-1 text-slate-500 uppercase font-bold">Fixo</span>}
+        <div className="bg-white p-3 rounded-2xl shadow-sm border border-slate-200 flex items-center gap-3 justify-between">
+            <div className="flex items-center gap-3 overflow-hidden">
+                <div className={`p-2 rounded-lg shrink-0 ${isUsingFixedLocation ? 'bg-amber-100 text-amber-700' : 'bg-indigo-100 text-indigo-700'}`}>
+                    {isUsingFixedLocation ? <Building2 size={18} /> : <MapPin size={18} />}
+                </div>
+                <div className="text-left overflow-hidden">
+                    <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Localização Atual</p>
+                    <p className="text-xs font-medium text-slate-700 truncate w-full" title={locationName}>
+                        {locationName}
+                    </p>
+                </div>
+            </div>
+            <button 
+                onClick={refreshLocation}
+                disabled={isLocating}
+                className="p-2 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg transition-colors"
+                title="Atualizar GPS"
+            >
+                <RefreshCw size={18} className={isLocating ? 'animate-spin text-indigo-600' : ''} />
+            </button>
         </div>
       </div>
 
+      {/* INTELLIGENT SUGGESTION BANNER */}
+      {nextAction && !isPunching && (
+          <div className="mb-6 bg-indigo-50 border border-indigo-100 px-4 py-2 rounded-lg flex items-center gap-2 text-indigo-700 text-sm animate-fade-in">
+              <Sparkles size={14} className="animate-pulse" />
+              <span>Próximo registro sugerido: <strong>{getLabel(nextAction)}</strong></span>
+          </div>
+      )}
+
       <div className="grid grid-cols-2 md:grid-cols-3 gap-4 w-full">
-        <ActionButton type="entry" label="Entrada" icon={LogIn} colorClass="bg-emerald-500 hover:bg-emerald-600 text-white" />
+        <ActionButton type="entry" label="Entrada" icon={LogIn} colorClass="bg-emerald-500 text-white" />
         
-        <ActionButton type="lunchStart" label="Início Almoço" icon={Utensils} colorClass="bg-amber-500 hover:bg-amber-600 text-white" />
-        <ActionButton type="lunchEnd" label="Fim Almoço" icon={Utensils} colorClass="bg-amber-500 hover:bg-amber-600 text-white" />
+        <ActionButton type="lunchStart" label="Início Almoço" icon={Utensils} colorClass="bg-amber-500 text-white" />
+        <ActionButton type="lunchEnd" label="Fim Almoço" icon={Utensils} colorClass="bg-amber-500 text-white" />
         
-        <ActionButton type="snackStart" label="Início Lanche" icon={Coffee} colorClass="bg-blue-500 hover:bg-blue-600 text-white" />
-        <ActionButton type="snackEnd" label="Fim Lanche" icon={Coffee} colorClass="bg-blue-500 hover:bg-blue-600 text-white" />
+        <ActionButton type="snackStart" label="Início Lanche" icon={Coffee} colorClass="bg-blue-500 text-white" />
+        <ActionButton type="snackEnd" label="Fim Lanche" icon={Coffee} colorClass="bg-blue-500 text-white" />
         
-        <ActionButton type="exit" label="Saída" icon={LogOut} colorClass="bg-rose-500 hover:bg-rose-600 text-white" />
+        <ActionButton type="exit" label="Saída" icon={LogOut} colorClass="bg-rose-500 text-white" />
       </div>
 
       <div className="mt-8 p-6 bg-white rounded-2xl shadow-sm border border-slate-200 w-full relative overflow-hidden">
