@@ -13,10 +13,9 @@ declare const process: {
 export const analyzeTimesheet = async (records: DailyRecord[], balance: number, query: string): Promise<string | null> => {
     try {
         // Initialize the client with the API key from the environment variable.
-        // Guidelines state: The API key must be obtained exclusively from the environment variable process.env.API_KEY.
         let apiKey = process.env.API_KEY || '';
         
-        // Limpeza de segurança: remove espaços em branco que podem vir do copy-paste
+        // Limpeza de segurança: remove espaços em branco
         apiKey = apiKey.trim();
 
         if (!apiKey) {
@@ -24,37 +23,40 @@ export const analyzeTimesheet = async (records: DailyRecord[], balance: number, 
             return "IA não configurada. Por favor, adicione a VITE_API_KEY no Netlify.";
         }
 
-        // Validação básica do formato da chave Google
-        if (!apiKey.startsWith("AIza")) {
-            console.error("API Key seems invalid (does not start with AIza). Check Netlify configuration.");
-            return "Erro de configuração: A chave da IA parece incorreta. Verifique no Netlify.";
-        }
-
         const ai = new GoogleGenAI({ apiKey });
 
-        const formattedData = records.slice(0, 14).map(r => ({ // Contexto dos últimos 14 registros
-            date: r.date,
-            hours: formatTime(r.totalMinutes),
-            balance: formatTime(r.balanceMinutes),
-            details: `Entry: ${r.entry}, Exit: ${r.exit}`
-        }));
+        // Prepara dados mais detalhados para a IA
+        const formattedData = records.slice(0, 14).map(r => {
+            const missingPunches = [];
+            if (r.entry && !r.exit) missingPunches.push('Saída');
+            if (r.lunchStart && !r.lunchEnd) missingPunches.push('Volta Almoço');
+            
+            return {
+                data: r.date,
+                trabalhado: formatTime(r.totalMinutes),
+                saldo_dia: formatTime(r.balanceMinutes),
+                entrada: r.entry,
+                saida: r.exit,
+                localizacao: r.location || 'Não registrado',
+                alertas: missingPunches.length > 0 ? `Esqueceu de bater: ${missingPunches.join(', ')}` : 'Ok'
+            };
+        });
 
         const prompt = `
-        Você é um Assistente de RH Inteligente do aplicativo SmartPoint.
-        Analise os dados de ponto do funcionário abaixo e responda à pergunta do usuário.
+        Você é o "Nobel AI", um auditor de ponto eletrônico inteligente e especialista em RH.
         
-        Dados Atuais:
-        - Saldo Total do Banco de Horas: ${formatTime(balance)}
-        - Histórico Recente (últimos dias): ${JSON.stringify(formattedData)}
+        CONTEXTO:
+        - Saldo Banco de Horas Total: ${formatTime(balance)}
+        - Dados recentes (JSON): ${JSON.stringify(formattedData)}
         
-        Regras:
-        - Jornada padrão: 8 horas diárias.
-        - Total semanal esperado: 44 horas.
-        - Seja cordial, profissional e direto.
-        - Se o saldo for negativo, sugira dias para recuperar.
-        - Se o usuário perguntar sobre leis trabalhistas (Brasil), responda com base na CLT de forma resumida.
+        DIRETRIZES:
+        1. Responda à pergunta do usuário: "${query}"
+        2. Analise proativamente se há dias com registros ímpares (ex: entrou e não saiu) e alerte o usuário.
+        3. Se o saldo for negativo, dê uma dica motivacional curta de como recuperar.
+        4. Se perguntarem sobre local, analise o campo 'localizacao'.
+        5. Seja conciso e use formatação Markdown (negrito) para destacar números importantes.
 
-        Pergunta do Usuário: "${query}"
+        Responda em português do Brasil.
         `;
 
         const response = await ai.models.generateContent({
@@ -65,6 +67,6 @@ export const analyzeTimesheet = async (records: DailyRecord[], balance: number, 
         return response.text || "Sem resposta da IA.";
     } catch (error) {
         console.error("Error invoking Gemini:", error);
-        return "Desculpe, não consegui conectar ao serviço de inteligência no momento.";
+        return "Desculpe, o serviço de inteligência está temporariamente indisponível. Verifique sua conexão.";
     }
 };

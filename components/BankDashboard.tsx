@@ -1,9 +1,12 @@
+
 import React, { useEffect, useState } from 'react';
-import { getRecords, getBankBalance } from '../services/storageService';
+import { getRecords, getBankBalance, getTransactions, getEmployees } from '../services/storageService';
 import { formatTime } from '../utils';
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell, ReferenceLine } from 'recharts';
-import { TrendingUp, TrendingDown, Clock, Target, AlertTriangle, Timer, CalendarCheck } from 'lucide-react';
+import { TrendingUp, TrendingDown, Clock, Target, AlertTriangle, Timer, CalendarCheck, Settings2, Lock, Loader2 } from 'lucide-react';
 import { DailyRecord } from '../types';
+import { BankManagement } from './BankManagement';
+import { PinModal } from './PinModal';
 
 interface Props {
   employeeId: string;
@@ -12,11 +15,75 @@ interface Props {
 export const BankDashboard: React.FC<Props> = ({ employeeId }) => {
   const [records, setRecords] = useState<DailyRecord[]>([]);
   const [bankBalance, setBankBalance] = useState(0);
+  const [showManagement, setShowManagement] = useState(false);
+  
+  // Security State
+  const [isPinModalOpen, setIsPinModalOpen] = useState(false);
+  const [managerPin, setManagerPin] = useState('');
+  
+  // Chart render state
+  const [isChartReady, setIsChartReady] = useState(false);
+
+  // New Stats for breakdown
+  const [manualAdjustmentTotal, setManualAdjustmentTotal] = useState(0);
+
+  const loadData = () => {
+    setRecords(getRecords(employeeId));
+    setBankBalance(getBankBalance(employeeId));
+    
+    // Calculate manual total separately for display
+    const trans = getTransactions(employeeId);
+    const manualTotal = trans.reduce((acc, curr) => acc + curr.amountMinutes, 0);
+    setManualAdjustmentTotal(manualTotal);
+  };
 
   useEffect(() => {
-      setRecords(getRecords(employeeId));
-      setBankBalance(getBankBalance(employeeId));
+      loadData();
+      // Delay chart rendering slightly to ensure container layout is computed
+      const timer = setTimeout(() => setIsChartReady(true), 100);
+      return () => clearTimeout(timer);
   }, [employeeId]);
+
+  const handleOpenManagement = () => {
+      const allEmployees = getEmployees();
+      const currentEmp = allEmployees.find(e => e.id === employeeId);
+      
+      // 1. Verifica se o usuário atual é Gerente
+      const isManager = currentEmp && (
+          currentEmp.role.toLowerCase().includes('gerente') || 
+          currentEmp.role.toLowerCase().includes('admin') ||
+          currentEmp.role.toLowerCase().includes('diretor')
+      );
+
+      if (isManager) {
+          setShowManagement(true);
+          return;
+      }
+
+      // 2. Se não for, busca o PIN de um Gerente cadastrado para pedir autorização
+      const managerAuth = allEmployees.find(e => 
+          (e.role.toLowerCase().includes('gerente') || e.role.toLowerCase().includes('admin')) && 
+          e.pin && e.pin.length === 4
+      );
+      
+      if (managerAuth) {
+          setManagerPin(managerAuth.pin);
+          setIsPinModalOpen(true);
+      } else {
+          // Fallback se não houver gerente configurado com PIN
+          if (currentEmp?.id === '1') {
+             // Funcionário padrão (setup inicial) tem acesso
+             setShowManagement(true);
+          } else {
+             alert("Acesso Restrito: Apenas Gerentes podem realizar ajustes.\n\nNenhum gerente com PIN configurado foi encontrado para autorizar esta ação.");
+          }
+      }
+  };
+
+  const handlePinSuccess = () => {
+      setIsPinModalOpen(false);
+      setShowManagement(true);
+  };
   
   // Calculate stats
   const totalWorkedMinutes = records.reduce((acc, curr) => acc + curr.totalMinutes, 0);
@@ -38,6 +105,38 @@ export const BankDashboard: React.FC<Props> = ({ employeeId }) => {
 
   return (
     <div className="w-full space-y-6 animate-fade-in pb-8">
+      
+      <PinModal 
+        isOpen={isPinModalOpen}
+        onClose={() => setIsPinModalOpen(false)}
+        onSuccess={handlePinSuccess}
+        correctPin={managerPin}
+      />
+
+      {showManagement && (
+          <BankManagement 
+            employeeId={employeeId} 
+            onUpdate={loadData}
+            onClose={() => setShowManagement(false)}
+          />
+      )}
+
+      {/* Header with Management Button */}
+      <div className="flex justify-end">
+          <button 
+            onClick={handleOpenManagement}
+            className="flex items-center gap-2 bg-slate-800 text-white px-4 py-2 rounded-lg text-sm font-bold hover:bg-slate-900 transition-colors shadow-lg group"
+          >
+            <div className="bg-slate-700 p-1 rounded group-hover:bg-slate-600 transition-colors">
+                <Lock size={14} className="text-slate-200" />
+            </div>
+            <span className="flex items-center gap-2">
+                <Settings2 size={16} />
+                Lançamentos e Ajustes
+            </span>
+          </button>
+      </div>
+
       {/* Big Bank Balance Card */}
       <div className={`relative overflow-hidden rounded-2xl p-8 text-white shadow-xl ${bankBalance >= 0 ? 'bg-gradient-to-br from-emerald-500 to-teal-700' : 'bg-gradient-to-br from-rose-500 to-red-700'}`}>
         <div className="absolute top-0 right-0 p-4 opacity-20">
@@ -50,13 +149,20 @@ export const BankDashboard: React.FC<Props> = ({ employeeId }) => {
               {formatTime(bankBalance)}
             </span>
             <span className="text-sm font-medium bg-white/20 px-2 py-1 rounded">
-              {bankBalance >= 0 ? 'Crédito (A Mais)' : 'Débito (A Menos)'}
+              {bankBalance >= 0 ? 'Crédito' : 'Débito'}
             </span>
           </div>
+          
+          {manualAdjustmentTotal !== 0 && (
+             <p className="mt-2 text-xs bg-black/20 inline-block px-2 py-1 rounded">
+                Inclui {formatTime(manualAdjustmentTotal)} de ajustes manuais
+             </p>
+          )}
+
           <p className="mt-4 text-sm opacity-80 max-w-xs">
              {bankBalance >= 0 
-               ? 'Você tem horas positivas acumuladas. Parabéns pelo empenho!' 
-               : 'Você está com horas negativas. Veja abaixo o plano de recuperação sugerido.'}
+               ? 'Saldo positivo. Clique em "Lançamentos" para registrar pagamentos de horas extras.' 
+               : 'Saldo negativo. Verifique se há atestados pendentes para lançar.'}
           </p>
         </div>
       </div>
@@ -134,24 +240,32 @@ export const BankDashboard: React.FC<Props> = ({ employeeId }) => {
 
       {/* Chart */}
       <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200">
-        <h3 className="font-bold text-slate-700 mb-6">Evolução do Saldo (Últimos 7 dias)</h3>
-        <div className="h-64 w-full">
-          <ResponsiveContainer width="100%" height="100%">
-            <BarChart data={chartData} margin={{ top: 5, right: 5, left: -20, bottom: 0 }}>
-              <XAxis dataKey="date" tick={{fontSize: 12}} axisLine={false} tickLine={false} />
-              <YAxis tick={{fontSize: 12}} axisLine={false} tickLine={false} />
-              <Tooltip 
-                formatter={(value: number) => [`${value} min`, 'Saldo Diário']}
-                contentStyle={{ borderRadius: '8px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)' }}
-              />
-              <ReferenceLine y={0} stroke="#94a3b8" />
-              <Bar dataKey="balance" radius={[4, 4, 0, 0]}>
-                {chartData.map((entry, index) => (
-                  <Cell key={`cell-${index}`} fill={entry.balance >= 0 ? '#10b981' : '#f43f5e'} />
-                ))}
-              </Bar>
-            </BarChart>
-          </ResponsiveContainer>
+        <h3 className="font-bold text-slate-700 mb-6">Evolução Diária (Automática)</h3>
+        {/* Explicit container with size to prevent Recharts calculation errors */}
+        <div className="h-[300px] w-full relative">
+          {isChartReady ? (
+            <ResponsiveContainer width="100%" height="100%">
+                <BarChart data={chartData} margin={{ top: 5, right: 5, left: -20, bottom: 0 }}>
+                <XAxis dataKey="date" tick={{fontSize: 12}} axisLine={false} tickLine={false} />
+                <YAxis tick={{fontSize: 12}} axisLine={false} tickLine={false} />
+                <Tooltip 
+                    formatter={(value: number) => [`${value} min`, 'Saldo Diário']}
+                    contentStyle={{ borderRadius: '8px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)' }}
+                />
+                <ReferenceLine y={0} stroke="#94a3b8" />
+                <Bar dataKey="balance" radius={[4, 4, 0, 0]}>
+                    {chartData.map((entry, index) => (
+                    <Cell key={`cell-${index}`} fill={entry.balance >= 0 ? '#10b981' : '#f43f5e'} />
+                    ))}
+                </Bar>
+                </BarChart>
+            </ResponsiveContainer>
+          ) : (
+            <div className="absolute inset-0 flex items-center justify-center text-slate-400 gap-2">
+                <Loader2 className="animate-spin" size={24} />
+                <span className="text-sm">Carregando gráfico...</span>
+            </div>
+          )}
         </div>
       </div>
     </div>

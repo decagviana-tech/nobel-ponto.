@@ -74,7 +74,6 @@ const App: React.FC = () => {
           }
 
           if (hardSync) {
-              console.log("Performing Hard Sync");
               replaceAllRecords(sheetData);
           } else {
               if(sheetData.length > 0) mergeExternalRecords(sheetData);

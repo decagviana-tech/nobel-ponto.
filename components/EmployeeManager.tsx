@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect } from 'react';
 import { Employee } from '../types';
 import { getEmployees, addEmployee, updateEmployee, deleteEmployee, getBankBalance, getGoogleConfig } from '../services/storageService';
@@ -28,7 +29,6 @@ export const EmployeeManager: React.FC<Props> = ({ onUpdate, currentEmployeeId, 
         const config = getGoogleConfig();
         
         if (currentList.length === 1 && currentList[0].id === '1' && config.enabled && config.scriptUrl) {
-            console.log("Auto-fetching employees from sheet...");
             handleForceImport();
         }
     }, []);

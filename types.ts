@@ -21,6 +21,20 @@ export interface DailyRecord {
   totalMinutes: number;
   balanceMinutes: number;
   location?: string;
+  latitude?: number;
+  longitude?: number;
+}
+
+export type TransactionType = 'PAYMENT' | 'CERTIFICATE' | 'ADJUSTMENT' | 'BONUS';
+
+export interface BankTransaction {
+  id: string;
+  employeeId: string;
+  date: string;
+  type: TransactionType;
+  amountMinutes: number; // Positive adds to bank, Negative removes
+  description: string;
+  createdAt: string;
 }
 
 export interface UserSettings {

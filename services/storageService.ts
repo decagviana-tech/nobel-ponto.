@@ -1,9 +1,11 @@
-import { DailyRecord, Employee, GoogleConfig } from '../types';
+
+import { DailyRecord, Employee, GoogleConfig, BankTransaction } from '../types';
 import { calculateDailyStats } from '../utils';
 
 const STORAGE_KEY_RECORDS = 'smartpoint_records_v2';
 const STORAGE_KEY_EMPLOYEES = 'smartpoint_employees_v1';
 const STORAGE_KEY_CONFIG = 'smartpoint_script_config_v1';
+const STORAGE_KEY_TRANSACTIONS = 'smartpoint_transactions_v1';
 
 // Declare process.env for TypeScript visibility in this file
 declare const process: {
@@ -19,11 +21,10 @@ export const getGoogleConfig = (): GoogleConfig => {
   if (data) return JSON.parse(data);
 
   // Fallback: Check Environment Variable (Netlify)
-  // This prevents the app from disconnecting if the browser wipes local storage
   const envUrl = process.env.GOOGLE_SCRIPT_URL;
   if (envUrl) {
       const autoConfig = { scriptUrl: envUrl, enabled: true };
-      saveGoogleConfig(autoConfig); // Save to local storage for next time
+      saveGoogleConfig(autoConfig); 
       return autoConfig;
   }
 
@@ -40,7 +41,6 @@ export const getEmployees = (): Employee[] => {
   const data = localStorage.getItem(STORAGE_KEY_EMPLOYEES);
   if (data) return JSON.parse(data);
 
-  // Default Initial Employee
   const defaultEmployee: Employee = {
     id: '1',
     name: 'Funcionário Padrão',
@@ -86,7 +86,7 @@ export const mergeExternalEmployees = (externalEmployees: Employee[]) => {
     const mergedMap = new Map<string, Employee>();
 
     localEmployees.forEach(e => mergedMap.set(e.id, e));
-    externalEmployees.forEach(e => mergedMap.set(e.id, e)); // External overwrites local for consistency
+    externalEmployees.forEach(e => mergedMap.set(e.id, e));
 
     const mergedList = Array.from(mergedMap.values());
     saveEmployees(mergedList);
@@ -101,7 +101,6 @@ export const getAllRecords = (): DailyRecord[] => {
 
 export const getRecords = (employeeId: string): DailyRecord[] => {
   const allRecords = getAllRecords();
-  // Filter by employee
   return allRecords.filter(r => r.employeeId === employeeId);
 };
 
@@ -109,35 +108,28 @@ export const saveAllRecords = (records: DailyRecord[]) => {
   localStorage.setItem(STORAGE_KEY_RECORDS, JSON.stringify(records));
 };
 
-// NEW: Hard Sync (Overwrites everything)
 export const replaceAllRecords = (newRecords: DailyRecord[]) => {
-  // We recalculate stats for incoming records just in case
   const processed = newRecords.map(r => {
      const stats = calculateDailyStats(r);
      return { ...r, totalMinutes: stats.total, balanceMinutes: stats.balance };
   });
-  // Sort by date descending
   processed.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
   saveAllRecords(processed);
 };
 
-// Called when we fetch fresh data from Google Sheets
 export const mergeExternalRecords = (externalRecords: DailyRecord[]) => {
   const localRecords = getAllRecords();
   const mergedMap = new Map<string, DailyRecord>();
 
-  // 1. Map all local records first
   localRecords.forEach(r => mergedMap.set(`${r.date}_${r.employeeId}`, r));
   
-  // 2. Merge external records
   externalRecords.forEach(ext => {
     const key = `${ext.date}_${ext.employeeId}`;
     const local = mergedMap.get(key);
 
     if (local) {
-      // Merge logic: Prefer External value, unless External is empty and Local has value
       const mergedRecord: DailyRecord = {
-        ...ext, // Start with external as base
+        ...ext,
         entry: ext.entry || local.entry,
         lunchStart: ext.lunchStart || local.lunchStart,
         lunchEnd: ext.lunchEnd || local.lunchEnd,
@@ -147,21 +139,18 @@ export const mergeExternalRecords = (externalRecords: DailyRecord[]) => {
         location: ext.location || local.location,
       };
 
-      // Recalculate stats based on the merged time fields
       const stats = calculateDailyStats(mergedRecord);
       mergedRecord.totalMinutes = stats.total;
       mergedRecord.balanceMinutes = stats.balance;
 
       mergedMap.set(key, mergedRecord);
     } else {
-      // New record from sheet that doesn't exist locally
       const stats = calculateDailyStats(ext);
       mergedMap.set(key, { ...ext, totalMinutes: stats.total, balanceMinutes: stats.balance });
     }
   });
 
   const mergedList = Array.from(mergedMap.values());
-  // Sort by date descending
   mergedList.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
   
   saveAllRecords(mergedList);
@@ -188,26 +177,58 @@ export const getTodayRecord = (employeeId: string, date: string): DailyRecord =>
 
 export const updateRecord = (updatedRecord: DailyRecord): DailyRecord[] => {
   let allRecords = getAllRecords();
-  
-  // Remove existing version of this specific record
   allRecords = allRecords.filter(r => !(r.date === updatedRecord.date && r.employeeId === updatedRecord.employeeId));
 
-  // Recalculate stats before saving
   const stats = calculateDailyStats(updatedRecord);
   const finalRecord = { ...updatedRecord, totalMinutes: stats.total, balanceMinutes: stats.balance };
 
-  // Add updated record
   allRecords.push(finalRecord);
-  
-  // Sort by date descending
   allRecords.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
   
   saveAllRecords(allRecords);
-  
   return allRecords.filter(r => r.employeeId === updatedRecord.employeeId);
 };
 
+// --- Transaction Management (New) ---
+
+export const getTransactions = (employeeId: string): BankTransaction[] => {
+    const data = localStorage.getItem(STORAGE_KEY_TRANSACTIONS);
+    const all: BankTransaction[] = data ? JSON.parse(data) : [];
+    return all.filter(t => t.employeeId === employeeId).sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+};
+
+export const addTransaction = (transaction: Omit<BankTransaction, 'id' | 'createdAt'>): BankTransaction => {
+    const data = localStorage.getItem(STORAGE_KEY_TRANSACTIONS);
+    const all: BankTransaction[] = data ? JSON.parse(data) : [];
+    
+    const newTx: BankTransaction = {
+        ...transaction,
+        id: Date.now().toString() + Math.random().toString(36).substr(2, 9),
+        createdAt: new Date().toISOString()
+    };
+    
+    all.push(newTx);
+    localStorage.setItem(STORAGE_KEY_TRANSACTIONS, JSON.stringify(all));
+    return newTx;
+};
+
+export const deleteTransaction = (id: string) => {
+    const data = localStorage.getItem(STORAGE_KEY_TRANSACTIONS);
+    if (!data) return;
+    let all: BankTransaction[] = JSON.parse(data);
+    all = all.filter(t => t.id !== id);
+    localStorage.setItem(STORAGE_KEY_TRANSACTIONS, JSON.stringify(all));
+};
+
+// Updated Calculation
 export const getBankBalance = (employeeId: string): number => {
+  // 1. Automatic Balance from Daily Punches
   const records = getRecords(employeeId);
-  return records.reduce((acc, curr) => acc + (curr.balanceMinutes || 0), 0);
+  const autoBalance = records.reduce((acc, curr) => acc + (curr.balanceMinutes || 0), 0);
+
+  // 2. Manual Adjustments from Transactions
+  const transactions = getTransactions(employeeId);
+  const manualBalance = transactions.reduce((acc, curr) => acc + curr.amountMinutes, 0);
+
+  return autoBalance + manualBalance;
 };
