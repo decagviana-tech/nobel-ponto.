@@ -63,7 +63,8 @@ export const normalizeTimeFromSheet = (val: any): string => {
 
   // Caso 2: Formato com segundos (ex: "13:06:00") -> Cortar para "13:06"
   if (/^\d{1,2}:\d{2}:\d{2}$/.test(str)) {
-      str = str.substring(0, 5);
+      const parts = str.split(':');
+      return `${parts[0].padStart(2, '0')}:${parts[1].padStart(2, '0')}`;
   }
 
   // Caso 3: Formato HH:mm simples (ex: "9:00" -> "09:00")

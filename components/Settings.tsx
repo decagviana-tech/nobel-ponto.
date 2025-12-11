@@ -10,7 +10,7 @@ interface Props {
   onConfigSaved: () => void;
 }
 
-const CURRENT_SCRIPT_VERSION = '2.1';
+const CURRENT_SCRIPT_VERSION = '2.2';
 
 const APPS_SCRIPT_CODE = `
 // ==========================================
@@ -121,7 +121,6 @@ function saveOrUpdateRow(data) {
   const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheets()[0];
   const lastRow = sheet.getLastRow();
   const range = sheet.getDataRange();
-  // Usamos getValues aqui para comparar datas corretamente
   const values = range.getValues(); 
   
   let rowIndex = -1;
@@ -141,16 +140,18 @@ function saveOrUpdateRow(data) {
     rowIndex = lastRow + 1;
   }
   
-  // Garante que a coluna Data (1) e as colunas de Hora (4 a 9) sejam Texto Simples
-  // Isso impede o Google de tentar ser esperto e converter para datas malucas
-  sheet.getRange(rowIndex, 1).setNumberFormat("@");
-  sheet.getRange(rowIndex, 4, 1, 9).setNumberFormat("@");
+  // FORMATAÇÃO FORÇADA DE TEXTO
+  // Isso impede que o Google transforme "13:06" em data
+  const textFormat = "@";
+  sheet.getRange(rowIndex, 1).setNumberFormat(textFormat); // Data
+  sheet.getRange(rowIndex, 2).setNumberFormat(textFormat); // ID
+  sheet.getRange(rowIndex, 4, 1, 6).setNumberFormat(textFormat); // Horários (Entry até Exit)
 
   const rowData = [
     data.date,
     String(data.employeeId),
     data.employeeName,
-    "'" + data.entry,       // O apóstrofo força formato texto no Excel/Google
+    "'" + data.entry,       // O apóstrofo força formato texto
     "'" + data.lunchStart,
     "'" + data.lunchEnd,
     "'" + data.snackStart,
@@ -184,7 +185,6 @@ function saveOrUpdateEmployee(data) {
   
   if (rowIndex === -1) rowIndex = sheet.getLastRow() + 1;
   
-  // Força formato texto para ID e PIN
   sheet.getRange(rowIndex, 1).setNumberFormat("@"); 
   sheet.getRange(rowIndex, 4).setNumberFormat("@");
 
@@ -289,7 +289,6 @@ export const Settings: React.FC<Props> = ({ onConfigSaved }) => {
       try {
           const employees = getEmployees();
           
-          // Process one by one to avoid rate limiting and ensure accuracy
           for (let i = 0; i < total; i++) {
               const record = allRecords[i];
               const emp = employees.find(e => e.id === record.employeeId);
@@ -298,10 +297,9 @@ export const Settings: React.FC<Props> = ({ onConfigSaved }) => {
               
               await syncRowToSheet(config.scriptUrl, record, empName, balance);
               
-              // Update progress bar
               setPushProgress(Math.round(((i + 1) / total) * 100));
               
-              // Small delay to be gentle on Google API
+              // Pequeno delay para não sobrecarregar
               await new Promise(r => setTimeout(r, 600));
           }
 
@@ -324,7 +322,7 @@ export const Settings: React.FC<Props> = ({ onConfigSaved }) => {
         
         if (data.status === 'success') {
             if (data.version !== CURRENT_SCRIPT_VERSION) {
-                alert(`⚠️ ALERTA DE VERSÃO\n\nA conexão funcionou, mas o código no Google está DESATUALIZADO.\n\nVersão do App: ${CURRENT_SCRIPT_VERSION}\nVersão no Google: ${data.version || 'Antiga'}\n\nPor favor, clique em "Ver Código do Script", copie o novo código e cole no Google Apps Script.`);
+                alert(`⚠️ ATENÇÃO: SCRIPT DESATUALIZADO\n\nVersão do App: ${CURRENT_SCRIPT_VERSION}\nVersão no Google: ${data.version || 'Antiga'}\n\nPara corrigir a bagunça na planilha, você PRECISA atualizar o código.\n\nClique em "Ver Código do Script", copie e cole lá no Google.`);
                 setShowScriptCode(true);
             } else {
                 alert('✅ Conexão Perfeita!\n\nO servidor respondeu e está na versão correta (' + data.version + ').');

@@ -194,7 +194,7 @@ export const TimeClock: React.FC<Props> = ({ onUpdate, employeeId }) => {
             : isLoading 
                 ? 'bg-slate-50 scale-95 ring-2 ring-brand-500' 
                 : isNext
-                    ? `${colorClass} scale-[1.02] ring-4 ring-offset-2 ring-brand-100 z-10 hover:scale-105 active:scale-95`
+                    ? `${colorClass} scale-[1.05] ring-4 ring-offset-2 ring-brand-100 z-10 shadow-xl hover:scale-110 active:scale-95`
                     : 'bg-white text-slate-600 border border-slate-200 hover:border-brand-200 hover:bg-slate-50 hover:scale-105 active:scale-95'
           }
         `}
@@ -207,12 +207,7 @@ export const TimeClock: React.FC<Props> = ({ onUpdate, employeeId }) => {
         
         <span className={`font-bold text-lg ${!isDone && !isNext ? 'text-slate-600' : ''}`}>{isLoading ? 'Registrando...' : label}</span>
         
-        {isNext && !isLoading && !isDone && (
-            <span className="absolute -top-3 left-1/2 -translate-x-1/2 bg-slate-800 text-white text-[10px] uppercase font-bold px-2 py-1 rounded-full shadow-md whitespace-nowrap flex items-center gap-1">
-                <Sparkles size={10} className="text-amber-400" />
-                Sugerido
-            </span>
-        )}
+        {/* REMOVIDO: Etiqueta "Sugerido" foi retirada conforme solicitado, mantendo apenas o destaque visual acima */}
         
         {isDone && (
             <span className="absolute bottom-2 text-xs font-mono bg-white/50 px-2 py-0.5 rounded-full text-slate-500 font-bold border border-slate-200">
@@ -251,7 +246,7 @@ export const TimeClock: React.FC<Props> = ({ onUpdate, employeeId }) => {
         <span>Banco de Horas: {formatTime(totalBankBalance)}</span>
       </div>
 
-      <div className="text-center mb-8 w-full max-w-md">
+      <div className="text-center mb-10 w-full max-w-md">
         <h3 className="text-slate-400 font-medium text-lg mb-1">{getGreeting()}!</h3>
         <h2 className="text-7xl font-black text-slate-800 tracking-tighter font-mono mb-4">
           {currentTime}
@@ -279,14 +274,6 @@ export const TimeClock: React.FC<Props> = ({ onUpdate, employeeId }) => {
             </button>
         </div>
       </div>
-
-      {/* INTELLIGENT SUGGESTION BANNER */}
-      {nextAction && !isPunching && (
-          <div className="mb-6 bg-indigo-50 border border-indigo-100 px-4 py-2 rounded-lg flex items-center gap-2 text-indigo-700 text-sm animate-fade-in">
-              <Sparkles size={14} className="animate-pulse" />
-              <span>Próximo registro sugerido: <strong>{getLabel(nextAction)}</strong></span>
-          </div>
-      )}
 
       <div className="grid grid-cols-2 md:grid-cols-3 gap-4 w-full">
         <ActionButton type="entry" label="Entrada" icon={LogIn} colorClass="bg-emerald-500 text-white" />

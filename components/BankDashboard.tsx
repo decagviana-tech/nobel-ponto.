@@ -3,7 +3,7 @@ import React, { useEffect, useState } from 'react';
 import { getRecords, getBankBalance, getTransactions, getEmployees } from '../services/storageService';
 import { formatTime } from '../utils';
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell, ReferenceLine } from 'recharts';
-import { TrendingUp, TrendingDown, Clock, Target, AlertTriangle, Timer, CalendarCheck, Settings2, Lock, Loader2 } from 'lucide-react';
+import { TrendingUp, TrendingDown, Clock, Target, AlertTriangle, Timer, CalendarCheck, Settings2, Lock, Loader2, Info } from 'lucide-react';
 import { DailyRecord } from '../types';
 import { BankManagement } from './BankManagement';
 import { PinModal } from './PinModal';
@@ -24,14 +24,19 @@ export const BankDashboard: React.FC<Props> = ({ employeeId }) => {
   // Chart render state
   const [isChartReady, setIsChartReady] = useState(false);
 
-  // New Stats for breakdown
+  // Stats breakdown
   const [manualAdjustmentTotal, setManualAdjustmentTotal] = useState(0);
+  const [dailyPunchesTotal, setDailyPunchesTotal] = useState(0);
 
   const loadData = () => {
-    setRecords(getRecords(employeeId));
+    const recs = getRecords(employeeId);
+    setRecords(recs);
     setBankBalance(getBankBalance(employeeId));
     
-    // Calculate manual total separately for display
+    // Calculate breakdowns
+    const dailyTotal = recs.reduce((acc, curr) => acc + (curr.balanceMinutes || 0), 0);
+    setDailyPunchesTotal(dailyTotal);
+
     const trans = getTransactions(employeeId);
     const manualTotal = trans.reduce((acc, curr) => acc + curr.amountMinutes, 0);
     setManualAdjustmentTotal(manualTotal);
@@ -39,7 +44,6 @@ export const BankDashboard: React.FC<Props> = ({ employeeId }) => {
 
   useEffect(() => {
       loadData();
-      // Delay chart rendering slightly to ensure container layout is computed
       const timer = setTimeout(() => setIsChartReady(true), 100);
       return () => clearTimeout(timer);
   }, [employeeId]);
@@ -48,7 +52,6 @@ export const BankDashboard: React.FC<Props> = ({ employeeId }) => {
       const allEmployees = getEmployees();
       const currentEmp = allEmployees.find(e => e.id === employeeId);
       
-      // 1. Verifica se o usuário atual é Gerente
       const isManager = currentEmp && (
           currentEmp.role.toLowerCase().includes('gerente') || 
           currentEmp.role.toLowerCase().includes('admin') ||
@@ -60,7 +63,6 @@ export const BankDashboard: React.FC<Props> = ({ employeeId }) => {
           return;
       }
 
-      // 2. Se não for, busca o PIN de um Gerente cadastrado para pedir autorização
       const managerAuth = allEmployees.find(e => 
           (e.role.toLowerCase().includes('gerente') || e.role.toLowerCase().includes('admin')) && 
           e.pin && e.pin.length === 4
@@ -70,9 +72,7 @@ export const BankDashboard: React.FC<Props> = ({ employeeId }) => {
           setManagerPin(managerAuth.pin);
           setIsPinModalOpen(true);
       } else {
-          // Fallback se não houver gerente configurado com PIN
           if (currentEmp?.id === '1') {
-             // Funcionário padrão (setup inicial) tem acesso
              setShowManagement(true);
           } else {
              alert("Acesso Restrito: Apenas Gerentes podem realizar ajustes.\n\nNenhum gerente com PIN configurado foi encontrado para autorizar esta ação.");
@@ -85,20 +85,17 @@ export const BankDashboard: React.FC<Props> = ({ employeeId }) => {
       setShowManagement(true);
   };
   
-  // Calculate stats
   const totalWorkedMinutes = records.reduce((acc, curr) => acc + curr.totalMinutes, 0);
   const daysWorked = records.filter(r => r.totalMinutes > 0).length;
-  const expectedMinutes = daysWorked * 480; // 8 hours per day worked
+  const expectedMinutes = daysWorked * 480; 
   const averageDaily = daysWorked > 0 ? totalWorkedMinutes / daysWorked : 0;
 
-  // Prepare chart data (last 7 entries)
   const chartData = records.slice(0, 7).reverse().map(r => ({
     date: new Date(r.date + 'T00:00:00').toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' }),
     balance: r.balanceMinutes,
-    worked: r.totalMinutes / 60 // hours
+    worked: r.totalMinutes / 60 
   }));
 
-  // Recovery Plan Calculations
   const minutesOwed = bankBalance < 0 ? Math.abs(bankBalance) : 0;
   const daysToRecover1h = Math.ceil(minutesOwed / 60);
   const daysToRecover30m = Math.ceil(minutesOwed / 30);
@@ -121,7 +118,6 @@ export const BankDashboard: React.FC<Props> = ({ employeeId }) => {
           />
       )}
 
-      {/* Header with Management Button */}
       <div className="flex justify-end">
           <button 
             onClick={handleOpenManagement}
@@ -135,6 +131,36 @@ export const BankDashboard: React.FC<Props> = ({ employeeId }) => {
                 Lançamentos e Ajustes
             </span>
           </button>
+      </div>
+
+      {/* COMPOSITION EXPLANATION */}
+      <div className="bg-white/80 border border-slate-200 rounded-lg p-3 text-xs flex flex-wrap gap-4 items-center justify-between shadow-sm">
+         <div className="flex items-center gap-2 text-slate-500">
+            <Info size={14} />
+            <span className="font-bold">Composição do Saldo:</span>
+         </div>
+         <div className="flex items-center gap-4">
+             <div className="flex flex-col items-end">
+                 <span className="text-slate-400 font-medium">Saldo dos Dias Trabalhados</span>
+                 <span className={`font-mono font-bold ${dailyPunchesTotal >= 0 ? 'text-emerald-600' : 'text-rose-600'}`}>
+                    {formatTime(dailyPunchesTotal)}
+                 </span>
+             </div>
+             <span className="text-slate-300 font-bold text-lg">+</span>
+             <div className="flex flex-col items-end">
+                 <span className="text-slate-400 font-medium">Ajustes Manuais</span>
+                 <span className={`font-mono font-bold ${manualAdjustmentTotal >= 0 ? 'text-emerald-600' : 'text-rose-600'}`}>
+                    {formatTime(manualAdjustmentTotal)}
+                 </span>
+             </div>
+             <span className="text-slate-300 font-bold text-lg">=</span>
+             <div className="flex flex-col items-end">
+                 <span className="text-slate-800 font-bold">Total</span>
+                 <span className={`font-mono font-black ${bankBalance >= 0 ? 'text-emerald-700' : 'text-rose-700'}`}>
+                    {formatTime(bankBalance)}
+                 </span>
+             </div>
+         </div>
       </div>
 
       {/* Big Bank Balance Card */}
@@ -153,60 +179,13 @@ export const BankDashboard: React.FC<Props> = ({ employeeId }) => {
             </span>
           </div>
           
-          {manualAdjustmentTotal !== 0 && (
-             <p className="mt-2 text-xs bg-black/20 inline-block px-2 py-1 rounded">
-                Inclui {formatTime(manualAdjustmentTotal)} de ajustes manuais
-             </p>
-          )}
-
           <p className="mt-4 text-sm opacity-80 max-w-xs">
              {bankBalance >= 0 
-               ? 'Saldo positivo. Clique em "Lançamentos" para registrar pagamentos de horas extras.' 
-               : 'Saldo negativo. Verifique se há atestados pendentes para lançar.'}
+               ? 'Saldo positivo. Se você fez um ajuste manual para "Zerar", verifique se não duplicou o valor nos Lançamentos.' 
+               : 'Saldo negativo. Trabalhe horas a mais nos próximos dias para compensar.'}
           </p>
         </div>
       </div>
-
-      {/* RECOVERY PLAN SECTION (Only if negative) */}
-      {minutesOwed > 0 && (
-        <div className="bg-orange-50 border border-orange-200 rounded-xl p-6 animate-fade-in">
-            <h3 className="flex items-center gap-2 text-lg font-bold text-orange-800 mb-4">
-                <AlertTriangle className="text-orange-600" />
-                Plano de Recuperação de Horas
-            </h3>
-            <p className="text-sm text-orange-700 mb-4">
-                Para regularizar seu banco de horas, o sistema sugere as seguintes opções de compensação:
-            </p>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div className="bg-white p-4 rounded-lg shadow-sm border border-orange-100 flex items-center gap-4 hover:shadow-md transition-shadow">
-                    <div className="bg-orange-100 p-3 rounded-full text-orange-600">
-                        <Timer size={24} />
-                    </div>
-                    <div>
-                        <p className="text-xs font-bold text-orange-600 uppercase tracking-wide">Opção Rápida</p>
-                        <p className="text-sm text-slate-500">Trabalhar +1 hora por dia</p>
-                        <p className="text-xl font-black text-slate-800 mt-1">
-                            {daysToRecover1h} dias
-                        </p>
-                        <p className="text-xs text-slate-400">necessários para zerar</p>
-                    </div>
-                </div>
-                <div className="bg-white p-4 rounded-lg shadow-sm border border-orange-100 flex items-center gap-4 hover:shadow-md transition-shadow">
-                    <div className="bg-orange-100 p-3 rounded-full text-orange-600">
-                        <CalendarCheck size={24} />
-                    </div>
-                    <div>
-                        <p className="text-xs font-bold text-orange-600 uppercase tracking-wide">Opção Leve</p>
-                        <p className="text-sm text-slate-500">Trabalhar +30 min por dia</p>
-                        <p className="text-xl font-black text-slate-800 mt-1">
-                            {daysToRecover30m} dias
-                        </p>
-                        <p className="text-xs text-slate-400">necessários para zerar</p>
-                    </div>
-                </div>
-            </div>
-        </div>
-      )}
 
       {/* Stats Grid */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
@@ -241,7 +220,6 @@ export const BankDashboard: React.FC<Props> = ({ employeeId }) => {
       {/* Chart */}
       <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200">
         <h3 className="font-bold text-slate-700 mb-6">Evolução Diária (Automática)</h3>
-        {/* Explicit container with size to prevent Recharts calculation errors */}
         <div className="h-[300px] w-full relative">
           {isChartReady ? (
             <ResponsiveContainer width="100%" height="100%">

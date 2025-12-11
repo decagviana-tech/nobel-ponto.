@@ -116,23 +116,23 @@ export const getAllRecords = (): DailyRecord[] => {
     const data = localStorage.getItem(STORAGE_KEY_RECORDS);
     let records: DailyRecord[] = data ? JSON.parse(data) : [];
     
-    // Auto-clean duplicates on read
-    // This is a safety measure to clean up existing mess in LocalStorage
+    // IMPORTANTE: Isso força o recálculo toda vez que os dados são lidos
+    // Corrige automaticamente erros de soma antigos
     return deduplicateRecords(records);
 };
 
-// Helper to remove duplicates aggressively
+// Helper to remove duplicates aggressively AND RECALCULATE STATS
 const deduplicateRecords = (records: DailyRecord[]): DailyRecord[] => {
     const map = new Map<string, DailyRecord>();
 
     records.forEach(r => {
         if (!r.date || !r.employeeId) return;
         
-        // Key is strictly Date + ID
+        // CHAVE ÚNICA: DATA + ID
         const key = `${r.date}_${r.employeeId}`;
         const existing = map.get(key);
 
-        // Normalize data here to ensure calculations work
+        // 1. LIMPEZA DOS HORÁRIOS (Remove segundos e datas malucas)
         const cleanRecord = {
             ...r,
             entry: normalizeTimeFromSheet(r.entry),
@@ -143,25 +143,38 @@ const deduplicateRecords = (records: DailyRecord[]): DailyRecord[] => {
             exit: normalizeTimeFromSheet(r.exit),
         };
 
+        // 2. LÓGICA DE MESCLAGEM INTELIGENTE
+        let finalRecord = cleanRecord;
+
         if (existing) {
-            // Merge strategy: Keep the one with MORE data
+            // Se já existe registro para este dia, vamos combinar o melhor dos dois mundos
+            // Priorizamos o registro que tem mais campos preenchidos
             const existingFields = countFields(existing);
             const newFields = countFields(cleanRecord);
             
             if (newFields > existingFields) {
-                 map.set(key, cleanRecord);
+                 finalRecord = cleanRecord;
             } else {
-                 // Merge empty fields in existing with new data if available
+                 // Fusão campo a campo para não perder nada
                  const merged = { ...existing };
                  if (!merged.entry && cleanRecord.entry) merged.entry = cleanRecord.entry;
                  if (!merged.exit && cleanRecord.exit) merged.exit = cleanRecord.exit;
                  if (!merged.lunchStart && cleanRecord.lunchStart) merged.lunchStart = cleanRecord.lunchStart;
                  if (!merged.lunchEnd && cleanRecord.lunchEnd) merged.lunchEnd = cleanRecord.lunchEnd;
-                 map.set(key, merged);
+                 if (!merged.snackStart && cleanRecord.snackStart) merged.snackStart = cleanRecord.snackStart;
+                 if (!merged.snackEnd && cleanRecord.snackEnd) merged.snackEnd = cleanRecord.snackEnd;
+                 
+                 finalRecord = merged;
             }
-        } else {
-            map.set(key, cleanRecord);
         }
+
+        // 3. RECÁLCULO MATEMÁTICO OBRIGATÓRIO
+        // Isso conserta o problema de "0h trabalhadas" retroativamente
+        const stats = calculateDailyStats(finalRecord);
+        finalRecord.totalMinutes = stats.total;
+        finalRecord.balanceMinutes = stats.balance;
+
+        map.set(key, finalRecord);
     });
 
     return Array.from(map.values());
@@ -172,6 +185,8 @@ const countFields = (r: DailyRecord) => {
     if (r.entry) count++;
     if (r.lunchStart) count++;
     if (r.lunchEnd) count++;
+    if (r.snackStart) count++;
+    if (r.snackEnd) count++;
     if (r.exit) count++;
     return count;
 };
@@ -182,14 +197,15 @@ export const getRecords = (employeeId: string): DailyRecord[] => {
 };
 
 export const saveAllRecords = (records: DailyRecord[]) => {
-  // Always Deduplicate before saving
+  // Always Deduplicate and Recalculate before saving to disk
   const clean = deduplicateRecords(records);
   localStorage.setItem(STORAGE_KEY_RECORDS, JSON.stringify(clean));
 };
 
 export const replaceAllRecords = (newRecords: DailyRecord[]) => {
+  // Chamado quando baixamos tudo da Planilha ("Hard Sync")
+  // Precisamos processar tudo para garantir que o formato local esteja perfeito
   const processed = newRecords.map(r => {
-     // Ensure cleaning happens
      const cleanR = {
         ...r,
         entry: normalizeTimeFromSheet(r.entry),
@@ -208,24 +224,14 @@ export const replaceAllRecords = (newRecords: DailyRecord[]) => {
 };
 
 export const mergeExternalRecords = (externalRecords: DailyRecord[]) => {
-  const localRecords = getAllRecords(); // This is already deduped
-  
-  // Combine both arrays
+  const localRecords = getAllRecords(); 
   const combined = [...localRecords, ...externalRecords];
   
-  // The deduplicateRecords function handles the logic of merging by Key
+  // A mágica acontece aqui: deduplicateRecords limpa, corrige formatos e recalcula
   const uniqueRecords = deduplicateRecords(combined);
-
-  // Recalculate stats for everyone to ensure consistency
-  const finalRecords = uniqueRecords.map(r => {
-      const stats = calculateDailyStats(r);
-      return { ...r, totalMinutes: stats.total, balanceMinutes: stats.balance };
-  });
-
-  finalRecords.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+  uniqueRecords.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
   
-  // Save directly to raw storage to avoid circular logic
-  localStorage.setItem(STORAGE_KEY_RECORDS, JSON.stringify(finalRecords));
+  localStorage.setItem(STORAGE_KEY_RECORDS, JSON.stringify(uniqueRecords));
 };
 
 export const getTodayRecord = (employeeId: string, date: string): DailyRecord => {
@@ -250,7 +256,7 @@ export const getTodayRecord = (employeeId: string, date: string): DailyRecord =>
 export const updateRecord = (updatedRecord: DailyRecord): DailyRecord[] => {
   let allRecords = getAllRecords();
   
-  // Remove existing version of this day
+  // Remove versão antiga deste dia para sobrescrever
   allRecords = allRecords.filter(r => !(r.date === updatedRecord.date && r.employeeId === updatedRecord.employeeId));
 
   const cleanRecord = {
