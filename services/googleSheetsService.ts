@@ -1,6 +1,6 @@
 
 import { DailyRecord, Employee } from '../types';
-import { minutesToHHMM } from '../utils';
+import { minutesToHHMM, normalizeTimeFromSheet } from '../utils';
 
 export const readEmployeesFromSheet = async (scriptUrl: string): Promise<Employee[] | null> => {
     if (!scriptUrl) return null; // Prevent fetch errors
@@ -27,9 +27,17 @@ export const readSheetData = async (scriptUrl: string): Promise<DailyRecord[] | 
     if (!response.ok) throw new Error("Network response was not ok");
     const data = await response.json();
     if (!Array.isArray(data)) return null;
+    
+    // AQUI APLICAMOS A LIMPEZA DAS HORAS
     return data.map((rec: any) => ({
         ...rec,
-        employeeId: String(rec.employeeId)
+        employeeId: String(rec.employeeId),
+        entry: normalizeTimeFromSheet(rec.entry),
+        lunchStart: normalizeTimeFromSheet(rec.lunchStart),
+        lunchEnd: normalizeTimeFromSheet(rec.lunchEnd),
+        snackStart: normalizeTimeFromSheet(rec.snackStart),
+        snackEnd: normalizeTimeFromSheet(rec.snackEnd),
+        exit: normalizeTimeFromSheet(rec.exit),
     }));
   } catch (error) {
     console.error("Error fetching records from script", error);

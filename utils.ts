@@ -20,9 +20,37 @@ export const minutesToHHMM = (minutes: number): string => {
 
 export const timeStringToMinutes = (timeStr: string): number | null => {
   if (!timeStr) return null;
-  const [h, m] = timeStr.split(':').map(Number);
+  // Limpeza de segurança caso venha data ISO
+  const cleanStr = normalizeTimeFromSheet(timeStr);
+  
+  const [h, m] = cleanStr.split(':').map(Number);
   if (isNaN(h) || isNaN(m)) return null;
   return h * 60 + m;
+};
+
+// NOVA FUNÇÃO: Limpa strings como "1899-12-30T12:19:28.000Z" para "12:19"
+export const normalizeTimeFromSheet = (val: any): string => {
+  if (!val) return '';
+  const str = String(val).trim();
+  
+  // Se já for HH:mm (ex: 09:00 ou 9:00)
+  if (/^\d{1,2}:\d{2}$/.test(str)) return str.padStart(5, '0');
+
+  // Se for formato ISO do Google (contém T)
+  if (str.includes('T')) {
+      const parts = str.split('T');
+      if (parts.length > 1) {
+          // Pega a parte da hora "12:19:28.000Z" e corta os primeiros 5 chars
+          return parts[1].substring(0, 5);
+      }
+  }
+  
+  // Fallback: se for muito longo, tenta cortar
+  if (str.length > 5 && str.includes(':')) {
+      return str.substring(0, 5);
+  }
+
+  return str;
 };
 
 export const calculateDailyStats = (record: DailyRecord, dailyTarget: number = 480): { total: number, balance: number } => {

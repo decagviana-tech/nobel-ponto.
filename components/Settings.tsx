@@ -4,11 +4,203 @@ import { getGoogleConfig, saveGoogleConfig, getLocationConfig, saveLocationConfi
 import { readSheetData, readEmployeesFromSheet, syncRowToSheet } from '../services/googleSheetsService';
 import { mergeExternalRecords, mergeExternalEmployees } from '../services/storageService';
 import { GoogleConfig } from '../types';
-import { Save, Database, CheckCircle, Link, Trash2, HelpCircle, Activity, Lock, MapPin, Building2, DownloadCloud, UploadCloud } from 'lucide-react';
+import { Save, Database, CheckCircle, Link, Trash2, HelpCircle, Activity, Lock, MapPin, Building2, DownloadCloud, UploadCloud, Code, Copy, X, AlertTriangle } from 'lucide-react';
 
 interface Props {
   onConfigSaved: () => void;
 }
+
+const APPS_SCRIPT_CODE = `
+// ==========================================
+// CÓDIGO OFICIAL - NOBEL PONTO (VERSÃO 2.0)
+// ==========================================
+
+function doGet(e) {
+  const action = e.parameter.action;
+  const sheet = SpreadsheetApp.getActiveSpreadsheet().getActiveSheet();
+  
+  if (action === 'test') {
+    return ContentService.createTextOutput(JSON.stringify({ status: 'success', message: 'Conexão ativa!' })).setMimeType(ContentService.MimeType.JSON);
+  }
+
+  if (action === 'getEmployees') {
+    let empSheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName("Funcionarios");
+    if (!empSheet) return ContentService.createTextOutput(JSON.stringify([])).setMimeType(ContentService.MimeType.JSON);
+    
+    // getDisplayValues garante que venha como TEXTO e não objeto de data
+    const rows = empSheet.getDataRange().getDisplayValues();
+    const employees = [];
+    for (let i = 1; i < rows.length; i++) {
+       if(rows[i][0]) {
+         employees.push({
+           id: String(rows[i][0]),
+           name: rows[i][1],
+           role: rows[i][2],
+           pin: String(rows[i][3] || ''),
+           active: rows[i][4] === "TRUE" || rows[i][4] === "true" || rows[i][4] === true
+         });
+       }
+    }
+    return ContentService.createTextOutput(JSON.stringify(employees)).setMimeType(ContentService.MimeType.JSON);
+  }
+
+  if (action === 'getRecords') {
+    // getDisplayValues é o SEGREDO para não vir datas 1899-12-30
+    const rows = sheet.getDataRange().getDisplayValues(); 
+    const records = [];
+    // Pula cabeçalho
+    for (let i = 1; i < rows.length; i++) {
+      if (rows[i][0]) {
+        records.push({
+          date: convertBrDateToIso(rows[i][0]), // Converte DD/MM/YYYY para YYYY-MM-DD se necessário
+          employeeId: String(rows[i][1]),
+          entry: cleanTime(rows[i][3]),
+          lunchStart: cleanTime(rows[i][4]),
+          lunchEnd: cleanTime(rows[i][5]),
+          snackStart: cleanTime(rows[i][6]),
+          snackEnd: cleanTime(rows[i][7]),
+          exit: cleanTime(rows[i][8]),
+          totalMinutes: 0, 
+          balanceMinutes: 0 
+        });
+      }
+    }
+    return ContentService.createTextOutput(JSON.stringify(records)).setMimeType(ContentService.MimeType.JSON);
+  }
+}
+
+function cleanTime(val) {
+  if (!val) return "";
+  return String(val).trim();
+}
+
+function convertBrDateToIso(dateStr) {
+  // Se vier 25/11/2025 transforma em 2025-11-25
+  if (dateStr.includes('/')) {
+    const parts = dateStr.split('/');
+    if (parts.length === 3) {
+      return parts[2] + '-' + parts[1] + '-' + parts[0];
+    }
+  }
+  return dateStr;
+}
+
+function doPost(e) {
+  const lock = LockService.getScriptLock();
+  lock.tryLock(10000);
+  
+  try {
+    const json = JSON.parse(e.postData.contents);
+    const action = json.action;
+    const data = json.data;
+    
+    if (action === 'syncRow') {
+       saveOrUpdateRow(data);
+       return ContentService.createTextOutput(JSON.stringify({ status: 'success' })).setMimeType(ContentService.MimeType.JSON);
+    }
+
+    if (action === 'syncEmployee') {
+       saveOrUpdateEmployee(data);
+       return ContentService.createTextOutput(JSON.stringify({ status: 'success' })).setMimeType(ContentService.MimeType.JSON);
+    }
+    
+  } catch (err) {
+    return ContentService.createTextOutput(JSON.stringify({ status: 'error', message: err.toString() })).setMimeType(ContentService.MimeType.JSON);
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+function saveOrUpdateRow(data) {
+  const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheets()[0];
+  const lastRow = sheet.getLastRow();
+  const range = sheet.getDataRange();
+  // Usamos getValues aqui para comparar datas corretamente
+  const values = range.getValues(); 
+  
+  let rowIndex = -1;
+  
+  // Procura linha existente pela Data + ID
+  for (let i = 1; i < values.length; i++) {
+    const rowDate = formatDate(values[i][0]);
+    const rowId = String(values[i][1]);
+    
+    if (rowDate === data.date && rowId === String(data.employeeId)) {
+      rowIndex = i + 1;
+      break;
+    }
+  }
+  
+  if (rowIndex === -1) {
+    rowIndex = lastRow + 1;
+  }
+  
+  // Garante que a coluna Data (1) e as colunas de Hora (4 a 9) sejam Texto Simples
+  // Isso impede o Google de tentar ser esperto e converter para datas malucas
+  sheet.getRange(rowIndex, 1).setNumberFormat("@");
+  sheet.getRange(rowIndex, 4, 1, 9).setNumberFormat("@");
+
+  const rowData = [
+    data.date,
+    String(data.employeeId),
+    data.employeeName,
+    "'" + data.entry,       // O apóstrofo força formato texto no Excel/Google
+    "'" + data.lunchStart,
+    "'" + data.lunchEnd,
+    "'" + data.snackStart,
+    "'" + data.snackEnd,
+    "'" + data.exit,
+    data.totalFormatted,   
+    data.balanceFormatted, 
+    data.currentTotalBalance 
+  ];
+  
+  const targetRange = sheet.getRange(rowIndex, 1, 1, rowData.length);
+  targetRange.setValues([rowData]);
+}
+
+function saveOrUpdateEmployee(data) {
+  let sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName("Funcionarios");
+  if (!sheet) {
+    sheet = SpreadsheetApp.getActiveSpreadsheet().insertSheet("Funcionarios");
+    sheet.appendRow(["ID", "Nome", "Cargo", "PIN", "Ativo"]);
+  }
+  
+  const values = sheet.getDataRange().getValues();
+  let rowIndex = -1;
+  
+  for (let i = 1; i < values.length; i++) {
+     if (String(values[i][0]) === String(data.id)) {
+       rowIndex = i + 1;
+       break;
+     }
+  }
+  
+  if (rowIndex === -1) rowIndex = sheet.getLastRow() + 1;
+  
+  // Força formato texto para ID e PIN
+  sheet.getRange(rowIndex, 1).setNumberFormat("@"); 
+  sheet.getRange(rowIndex, 4).setNumberFormat("@");
+
+  sheet.getRange(rowIndex, 1, 1, 5).setValues([[
+    String(data.id),
+    data.name,
+    data.role,
+    String(data.pin),
+    data.active
+  ]]);
+}
+
+function formatDate(dateObj) {
+  if (!dateObj) return "";
+  if (typeof dateObj === 'string') return dateObj;
+  try {
+    return Utilities.formatDate(dateObj, Session.getScriptTimeZone(), "yyyy-MM-dd");
+  } catch(e) {
+    return "";
+  }
+}
+`;
 
 export const Settings: React.FC<Props> = ({ onConfigSaved }) => {
   const [config, setConfig] = useState<GoogleConfig>({ scriptUrl: '', enabled: false });
@@ -18,6 +210,7 @@ export const Settings: React.FC<Props> = ({ onConfigSaved }) => {
   const [isPulling, setIsPulling] = useState(false);
   const [isPushing, setIsPushing] = useState(false);
   const [pushProgress, setPushProgress] = useState(0);
+  const [showScriptCode, setShowScriptCode] = useState(false);
 
   useEffect(() => {
     setConfig(getGoogleConfig());
@@ -61,7 +254,7 @@ export const Settings: React.FC<Props> = ({ onConfigSaved }) => {
           const sheetRecords = await readSheetData(config.scriptUrl);
           if (sheetRecords) mergeExternalRecords(sheetRecords);
 
-          alert("Sincronização Completa!\n\nOs dados da planilha foram baixados para este computador.");
+          alert("Sincronização Completa!\n\nOs dados da planilha foram baixados e mesclados com os dados locais.");
           onConfigSaved();
       } catch (error) {
           alert("Erro ao baixar dados. Verifique sua conexão.");
@@ -73,22 +266,23 @@ export const Settings: React.FC<Props> = ({ onConfigSaved }) => {
 
   const handleForcePush = async () => {
       if (!config.scriptUrl) return;
-      if (!confirm("Isso vai pegar TODOS os registros deste computador (que estão corretos) e sobrescrever os dados na planilha.\n\nIsso corrige os cálculos errados do passado.\n\nDeseja continuar?")) return;
+      
+      const allRecords = getAllRecords();
+      const total = allRecords.length;
+
+      if (total === 0) {
+          alert("Não há registros locais para enviar.");
+          return;
+      }
+
+      if (!confirm(`Você tem ${total} registros salvos neste aplicativo (Computador).\n\nAtenção: Esta ação enviará todos eles para a planilha, corrigindo datas e cálculos errados lá.\n\nDeseja iniciar o reparo?`)) return;
 
       setIsPushing(true);
       setPushProgress(0);
       
       try {
-          const allRecords = getAllRecords();
           const employees = getEmployees();
-          const total = allRecords.length;
           
-          if (total === 0) {
-              alert("Não há registros locais para enviar.");
-              setIsPushing(false);
-              return;
-          }
-
           // Process one by one to avoid rate limiting and ensure accuracy
           for (let i = 0; i < total; i++) {
               const record = allRecords[i];
@@ -102,13 +296,13 @@ export const Settings: React.FC<Props> = ({ onConfigSaved }) => {
               setPushProgress(Math.round(((i + 1) / total) * 100));
               
               // Small delay to be gentle on Google API
-              await new Promise(r => setTimeout(r, 800));
+              await new Promise(r => setTimeout(r, 600));
           }
 
-          alert("Reparo concluído! A planilha foi atualizada com os cálculos corretos.");
+          alert("✅ Reparo concluído com sucesso!\n\nVerifique sua planilha. As datas devem estar corretas agora.");
       } catch (error) {
           console.error(error);
-          alert("Ocorreu um erro durante o envio. Alguns registros podem não ter sido atualizados.");
+          alert("Ocorreu um erro durante o envio. Verifique sua conexão e tente novamente.");
       } finally {
           setIsPushing(false);
           setPushProgress(0);
@@ -135,9 +329,52 @@ export const Settings: React.FC<Props> = ({ onConfigSaved }) => {
     }
   };
 
+  const copyToClipboard = () => {
+      navigator.clipboard.writeText(APPS_SCRIPT_CODE);
+      alert("Código copiado! Cole no Editor de Script do Google.");
+  };
+
   return (
     <div className="max-w-2xl mx-auto animate-fade-in pb-10">
       
+      {/* Script Code Modal */}
+      {showScriptCode && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/80 backdrop-blur-sm p-4">
+              <div className="bg-white rounded-2xl w-full max-w-3xl h-[80vh] flex flex-col shadow-2xl">
+                  <div className="p-4 border-b border-slate-200 flex justify-between items-center bg-slate-50 rounded-t-2xl">
+                      <h3 className="font-bold text-slate-800 flex items-center gap-2">
+                          <Code size={20} className="text-indigo-600" />
+                          Código do Servidor (Apps Script) v2.0
+                      </h3>
+                      <button onClick={() => setShowScriptCode(false)} className="p-2 hover:bg-slate-200 rounded-full">
+                          <X size={20} />
+                      </button>
+                  </div>
+                  <div className="flex-1 p-0 overflow-hidden relative bg-slate-900">
+                      <textarea 
+                          className="w-full h-full bg-slate-900 text-slate-300 font-mono text-xs p-4 resize-none outline-none"
+                          readOnly
+                          value={APPS_SCRIPT_CODE}
+                      />
+                  </div>
+                  <div className="p-4 border-t border-slate-200 bg-white rounded-b-2xl flex flex-col md:flex-row justify-between items-center gap-4">
+                      <div className="text-xs text-slate-500">
+                          <p className="font-bold text-rose-600 flex items-center gap-1"><AlertTriangle size={12}/> IMPORTANTE:</p>
+                          1. Cole este código em <b>Extensões &gt; Apps Script</b>.<br/>
+                          2. Clique em <b>Implantar &gt; Nova Implantação</b>.
+                      </div>
+                      <button 
+                          onClick={copyToClipboard}
+                          className="flex items-center gap-2 bg-indigo-600 text-white px-6 py-2 rounded-lg hover:bg-indigo-700 font-bold shadow-sm whitespace-nowrap"
+                      >
+                          <Copy size={16} />
+                          Copiar Código
+                      </button>
+                  </div>
+              </div>
+          </div>
+      )}
+
       <div className="flex justify-end mb-4">
          <button 
             onClick={() => window.location.reload()} 
@@ -170,8 +407,26 @@ export const Settings: React.FC<Props> = ({ onConfigSaved }) => {
             </div>
 
             <div className="space-y-4">
+                <div className="bg-indigo-50 border border-indigo-100 rounded-lg p-4 mb-4">
+                    <div className="flex gap-3">
+                        <Code className="text-indigo-600 shrink-0" size={20} />
+                        <div>
+                            <h4 className="text-sm font-bold text-indigo-900 mb-1">Passo 1: Código do Servidor</h4>
+                            <p className="text-xs text-indigo-700 mb-3">
+                                Este código corrige o erro das datas (1899) e formatação.
+                            </p>
+                            <button 
+                                onClick={() => setShowScriptCode(true)}
+                                className="text-xs bg-white border border-indigo-200 text-indigo-700 px-3 py-1.5 rounded font-bold hover:bg-indigo-50 transition-colors shadow-sm"
+                            >
+                                Ver Código do Script (Copiar)
+                            </button>
+                        </div>
+                    </div>
+                </div>
+
                 <div>
-                    <label className="block text-sm font-medium text-slate-700 mb-1">URL do App da Web (Apps Script)</label>
+                    <label className="block text-sm font-medium text-slate-700 mb-1">Passo 2: URL do App da Web</label>
                     <div className="flex gap-2">
                         <div className="relative flex-1">
                             <Link className="absolute left-3 top-3.5 text-slate-400" size={16} />
@@ -202,28 +457,30 @@ export const Settings: React.FC<Props> = ({ onConfigSaved }) => {
                     <div className="pt-4 border-t border-slate-100 space-y-3">
                         <p className="text-xs font-bold text-slate-500 uppercase">Sincronização Manual</p>
                         
-                        <button 
-                            onClick={handleForcePull}
-                            disabled={isPulling || isPushing}
-                            className="w-full flex items-center justify-center gap-2 px-4 py-3 rounded-lg font-bold text-slate-700 bg-slate-100 hover:bg-slate-200 transition-all disabled:opacity-50 border border-slate-200"
-                        >
-                            <DownloadCloud size={20} className={isPulling ? 'animate-bounce' : ''} />
-                            {isPulling ? 'Baixando Dados...' : 'Baixar Dados da Nuvem (Download)'}
-                        </button>
+                        <div className="grid grid-cols-2 gap-3">
+                            <button 
+                                onClick={handleForcePull}
+                                disabled={isPulling || isPushing}
+                                className="flex items-center justify-center gap-2 px-3 py-3 rounded-lg font-bold text-slate-700 bg-slate-100 hover:bg-slate-200 transition-all disabled:opacity-50 border border-slate-200 text-sm"
+                            >
+                                <DownloadCloud size={18} className={isPulling ? 'animate-bounce' : ''} />
+                                {isPulling ? 'Baixando...' : 'Baixar'}
+                            </button>
 
-                        <button 
-                            onClick={handleForcePush}
-                            disabled={isPulling || isPushing}
-                            className="w-full flex items-center justify-center gap-2 px-4 py-3 rounded-lg font-bold text-white bg-indigo-600 hover:bg-indigo-700 transition-all disabled:opacity-50 shadow-sm relative overflow-hidden"
-                        >
-                            <div className={`absolute left-0 top-0 bottom-0 bg-white/20 transition-all duration-300`} style={{ width: `${pushProgress}%` }}></div>
-                            <div className="relative flex items-center gap-2">
-                                <UploadCloud size={20} className={isPushing ? 'animate-bounce' : ''} />
-                                {isPushing ? `Enviando... ${pushProgress}%` : 'Reparar Planilha (Upload Forçado)'}
-                            </div>
-                        </button>
+                            <button 
+                                onClick={handleForcePush}
+                                disabled={isPulling || isPushing}
+                                className="flex items-center justify-center gap-2 px-3 py-3 rounded-lg font-bold text-white bg-indigo-600 hover:bg-indigo-700 transition-all disabled:opacity-50 shadow-sm relative overflow-hidden text-sm"
+                            >
+                                <div className={`absolute left-0 top-0 bottom-0 bg-white/20 transition-all duration-300`} style={{ width: `${pushProgress}%` }}></div>
+                                <div className="relative flex items-center gap-2">
+                                    <UploadCloud size={18} className={isPushing ? 'animate-bounce' : ''} />
+                                    {isPushing ? `${pushProgress}%` : 'Reparar Planilha'}
+                                </div>
+                            </button>
+                        </div>
                         <p className="text-[10px] text-center text-slate-400">
-                            Use "Reparar Planilha" se os cálculos na planilha estiverem errados mas corretos aqui.
+                            Use "Reparar Planilha" para enviar seus dados locais e corrigir as datas na planilha.
                         </p>
                     </div>
                 )}
