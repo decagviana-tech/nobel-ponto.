@@ -3,6 +3,7 @@ import { DailyRecord } from './types';
 import { format, parse, differenceInMinutes, isValid } from 'date-fns';
 
 export const formatTime = (minutes: number): string => {
+  if (isNaN(minutes)) return '0h 00m';
   const sign = minutes < 0 ? '-' : '';
   const absMinutes = Math.abs(minutes);
   const h = Math.floor(absMinutes / 60);
@@ -11,6 +12,7 @@ export const formatTime = (minutes: number): string => {
 };
 
 export const minutesToHHMM = (minutes: number): string => {
+  if (isNaN(minutes)) return '00:00';
   const sign = minutes < 0 ? '-' : '';
   const absMinutes = Math.abs(minutes);
   const h = Math.floor(absMinutes / 60);
@@ -20,57 +22,72 @@ export const minutesToHHMM = (minutes: number): string => {
 
 export const timeStringToMinutes = (timeStr: string): number | null => {
   if (!timeStr) return null;
-  // Limpeza de segurança caso venha data ISO
+  
+  // Limpeza profunda para garantir formato HH:mm
   const cleanStr = normalizeTimeFromSheet(timeStr);
   
-  // Se após limpar ainda não for HH:mm, retorna null para não quebrar conta
-  if (!/^\d{1,2}:\d{2}$/.test(cleanStr)) return null;
+  if (!cleanStr) return null;
 
-  const [h, m] = cleanStr.split(':').map(Number);
+  const parts = cleanStr.split(':');
+  if (parts.length < 2) return null;
+
+  const h = parseInt(parts[0], 10);
+  const m = parseInt(parts[1], 10);
+
   if (isNaN(h) || isNaN(m)) return null;
+  
   return h * 60 + m;
 };
 
-// FUNÇÃO DE LIMPEZA REFORÇADA (ANTI-1899)
+// FUNÇÃO DE LIMPEZA REFORÇADA (ANTI-1899 e ANTI-SEGUNDOS)
 export const normalizeTimeFromSheet = (val: any): string => {
   if (!val) return '';
-  const str = String(val).trim();
+  let str = String(val).trim();
   
-  // 1. Se já for HH:mm simples (ex: "09:00" ou "9:00")
-  if (/^\d{1,2}:\d{2}$/.test(str)) {
-      return str.padStart(5, '0'); // Garante 09:00
-  }
-
-  // 2. Se for Data ISO maluca do Google (ex: "1899-12-30T14:19:28.000Z")
-  // O Google Sheets as vezes manda com fuso horário zoado. 
-  // O ideal é pegar a hora que está VISIVEL na string se possível.
+  // Caso 1: Data ISO completa (ex: "1899-12-30T14:19:28.000Z")
   if (str.includes('T')) {
-      // Tenta extrair o padrão HH:mm logo após o T
       const timeMatch = str.match(/T(\d{2}:\d{2})/);
       if (timeMatch && timeMatch[1]) {
-          // Ajuste fino: Se a planilha está mandando UTC e o Brasil é -3, 
-          // as vezes o Google manda a hora certa mas com o Z no final.
-          // Vamos confiar cegamente nos numeros que vieram por enquanto.
           return timeMatch[1];
       }
+      // Tentativa secundária com Date object se regex falhar
+      try {
+        const dateObj = new Date(str);
+        if (!isNaN(dateObj.getTime())) {
+           const h = dateObj.getUTCHours().toString().padStart(2, '0');
+           const m = dateObj.getUTCMinutes().toString().padStart(2, '0');
+           return `${h}:${m}`;
+        }
+      } catch (e) {}
   }
 
-  // 3. Fallback: Tenta criar um objeto Date e extrair a hora local
-  // CUIDADO: Isso pode dar problemas de fuso horário (3 horas de diferença)
-  const dateObj = new Date(str);
-  if (!isNaN(dateObj.getTime()) && str.length > 8) {
-     // Se for uma data válida, pegamos a hora UTC para evitar conversão de browser
-     const h = dateObj.getUTCHours().toString().padStart(2, '0');
-     const m = dateObj.getUTCMinutes().toString().padStart(2, '0');
-     return `${h}:${m}`;
+  // Caso 2: Formato com segundos (ex: "13:06:00") -> Cortar para "13:06"
+  if (/^\d{1,2}:\d{2}:\d{2}$/.test(str)) {
+      str = str.substring(0, 5);
+  }
+
+  // Caso 3: Formato HH:mm simples (ex: "9:00" -> "09:00")
+  if (/^\d{1,2}:\d{2}$/.test(str)) {
+      return str.padStart(5, '0'); 
+  }
+
+  // Se chegou aqui e tem pelo menos "d:d", tenta salvar
+  if (str.includes(':')) {
+     const parts = str.split(':');
+     if (parts.length >= 2) {
+         const h = parts[0].padStart(2, '0');
+         const m = parts[1].padStart(2, '0');
+         // Verifica se são números válidos
+         if (!isNaN(Number(h)) && !isNaN(Number(m))) {
+             return `${h}:${m}`;
+         }
+     }
   }
   
-  // 4. Se for lixo ou texto, retorna vazio
   return '';
 };
 
 export const calculateDailyStats = (record: DailyRecord, dailyTarget: number = 480): { total: number, balance: number } => {
-  // Garante que estamos usando valores limpos
   const entry = timeStringToMinutes(record.entry);
   const lunchStart = timeStringToMinutes(record.lunchStart);
   const lunchEnd = timeStringToMinutes(record.lunchEnd);
@@ -80,35 +97,47 @@ export const calculateDailyStats = (record: DailyRecord, dailyTarget: number = 4
 
   let worked = 0;
 
-  // Period 1: Entry to Lunch Start
+  // Lógica de Cálculo Robusta
+
+  // 1. Período da Manhã (Entrada -> Almoço OU Entrada -> Saída Direta)
   if (entry !== null) {
     if (lunchStart !== null) {
-      worked += Math.max(0, lunchStart - entry);
-    } else if (exit !== null && lunchStart === null) {
-        // Only Entry and Exit
-        worked += Math.max(0, exit - entry);
+      // Trabalhou até o almoço
+      if (lunchStart > entry) worked += (lunchStart - entry);
+    } else if (exit !== null) {
+      // Sem almoço registrado, trabalhou direto até a saída (ou turno único)
+      // Só calcula se não tiver nenhum outro registro intermediário que possa confundir
+      if (lunchEnd === null && snackStart === null && snackEnd === null) {
+          if (exit > entry) worked += (exit - entry);
+      }
     }
   }
 
-  // Period 2: Lunch End to Snack Start (or Exit if no snack)
+  // 2. Período da Tarde (Volta Almoço -> Lanche OU Volta Almoço -> Saída)
   if (lunchEnd !== null) {
     if (snackStart !== null) {
-      worked += Math.max(0, snackStart - lunchEnd);
+       // Trabalhou até o lanche
+       if (snackStart > lunchEnd) worked += (snackStart - lunchEnd);
     } else if (exit !== null) {
-      worked += Math.max(0, exit - lunchEnd);
+       // Sem lanche, foi até a saída
+       if (exit > lunchEnd) worked += (exit - lunchEnd);
     }
   }
 
-  // Period 3: Snack End to Exit
+  // 3. Período Pós-Lanche (Volta Lanche -> Saída)
   if (snackEnd !== null && exit !== null) {
-    worked += Math.max(0, exit - snackEnd);
+      if (exit > snackEnd) worked += (exit - snackEnd);
   }
 
-  // BALANCE CALCULATION
+  // Se o cálculo der negativo ou NaN por algum motivo bizarro, zera
+  if (worked < 0 || isNaN(worked)) worked = 0;
+
+  // Cálculo do Saldo
   let balance = 0;
   
-  // Só calcula saldo se tiver saído OU se tiver trabalhado muito (esqueceram de bater saida)
-  if (exit !== null || worked > 600) {
+  // Regra: Só calcula saldo se o dia parece "encerrado" ou se já trabalhou mais que a meta
+  // Consideramos encerrado se tiver SAÍDA marcada.
+  if (exit !== null || worked > dailyTarget) {
       balance = worked - dailyTarget;
   }
 
