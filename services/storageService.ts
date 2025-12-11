@@ -6,6 +6,7 @@ const STORAGE_KEY_RECORDS = 'smartpoint_records_v2';
 const STORAGE_KEY_EMPLOYEES = 'smartpoint_employees_v1';
 const STORAGE_KEY_CONFIG = 'smartpoint_script_config_v1';
 const STORAGE_KEY_TRANSACTIONS = 'smartpoint_transactions_v1';
+const STORAGE_KEY_LOCATION = 'smartpoint_location_config_v1';
 
 // Declare process.env for TypeScript visibility in this file
 declare const process: {
@@ -33,6 +34,23 @@ export const getGoogleConfig = (): GoogleConfig => {
 
 export const saveGoogleConfig = (config: GoogleConfig) => {
   localStorage.setItem(STORAGE_KEY_CONFIG, JSON.stringify(config));
+};
+
+// --- Location Configuration (NEW) ---
+
+export interface LocationConfig {
+    useFixed: boolean;
+    fixedName: string;
+}
+
+export const getLocationConfig = (): LocationConfig => {
+    const data = localStorage.getItem(STORAGE_KEY_LOCATION);
+    if (data) return JSON.parse(data);
+    return { useFixed: false, fixedName: 'Loja Principal' };
+};
+
+export const saveLocationConfig = (config: LocationConfig) => {
+    localStorage.setItem(STORAGE_KEY_LOCATION, JSON.stringify(config));
 };
 
 // --- Employee Management ---
@@ -121,22 +139,28 @@ export const mergeExternalRecords = (externalRecords: DailyRecord[]) => {
   const localRecords = getAllRecords();
   const mergedMap = new Map<string, DailyRecord>();
 
+  // 1. Load local records into map
   localRecords.forEach(r => mergedMap.set(`${r.date}_${r.employeeId}`, r));
   
+  // 2. Merge external records
   externalRecords.forEach(ext => {
     const key = `${ext.date}_${ext.employeeId}`;
     const local = mergedMap.get(key);
 
     if (local) {
+      // Logic: If external has data and local is empty, take external.
+      // If both have data, prefer local (assuming it's the latest punch), OR prefer external if acting as a sync down.
+      // For safety, we merge non-empty fields.
       const mergedRecord: DailyRecord = {
-        ...ext,
+        ...local, // Base on local to keep un-synced punches
         entry: ext.entry || local.entry,
         lunchStart: ext.lunchStart || local.lunchStart,
         lunchEnd: ext.lunchEnd || local.lunchEnd,
         snackStart: ext.snackStart || local.snackStart,
         snackEnd: ext.snackEnd || local.snackEnd,
         exit: ext.exit || local.exit,
-        location: ext.location || local.location,
+        // Prefer external location if local is generic
+        location: (local.location && local.location.includes('Obtendo')) ? ext.location : (local.location || ext.location),
       };
 
       const stats = calculateDailyStats(mergedRecord);
@@ -145,6 +169,7 @@ export const mergeExternalRecords = (externalRecords: DailyRecord[]) => {
 
       mergedMap.set(key, mergedRecord);
     } else {
+      // New record from cloud
       const stats = calculateDailyStats(ext);
       mergedMap.set(key, { ...ext, totalMinutes: stats.total, balanceMinutes: stats.balance });
     }

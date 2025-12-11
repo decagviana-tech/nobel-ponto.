@@ -11,10 +11,11 @@ export const formatTime = (minutes: number): string => {
 };
 
 export const minutesToHHMM = (minutes: number): string => {
+  const sign = minutes < 0 ? '-' : '';
   const absMinutes = Math.abs(minutes);
   const h = Math.floor(absMinutes / 60);
   const m = absMinutes % 60;
-  return `${h.toString().padStart(2, '0')}:${m.toString().padStart(2, '0')}`;
+  return `${sign}${h.toString().padStart(2, '0')}:${m.toString().padStart(2, '0')}`;
 };
 
 export const timeStringToMinutes = (timeStr: string): number | null => {

@@ -1,6 +1,6 @@
 
-
 import { DailyRecord, Employee } from '../types';
+import { minutesToHHMM } from '../utils';
 
 export const readEmployeesFromSheet = async (scriptUrl: string): Promise<Employee[] | null> => {
     if (!scriptUrl) return null; // Prevent fetch errors
@@ -40,6 +40,11 @@ export const readSheetData = async (scriptUrl: string): Promise<DailyRecord[] | 
 export const syncRowToSheet = async (scriptUrl: string, record: DailyRecord, employeeName: string, currentTotalBalance: number) => {
   if (!scriptUrl) return;
   try {
+    // Convert numbers to HH:MM format for the sheet
+    // This ensures the sheet displays exactly what the app calculated
+    const totalFormatted = minutesToHHMM(record.totalMinutes);
+    const balanceFormatted = minutesToHHMM(record.balanceMinutes);
+
     // keepalive ensures the request outlives the page/component lifecycle
     await fetch(scriptUrl, {
         method: 'POST',
@@ -54,7 +59,9 @@ export const syncRowToSheet = async (scriptUrl: string, record: DailyRecord, emp
                 ...record, 
                 employeeId: String(record.employeeId), 
                 employeeName,
-                currentTotalBalance 
+                currentTotalBalance,
+                totalFormatted,   // Sending pre-calculated string
+                balanceFormatted  // Sending pre-calculated string
             }
         })
     });

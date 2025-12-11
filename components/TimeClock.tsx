@@ -2,8 +2,8 @@
 import React, { useState, useEffect } from 'react';
 import { DailyRecord, TimeRecordType } from '../types';
 import { getCurrentTime, getTodayString, formatTime } from '../utils';
-import { updateRecord, getTodayRecord, getBankBalance } from '../services/storageService';
-import { Coffee, Utensils, LogOut, LogIn, MapPin, Wallet, AlertTriangle, Loader2, CheckCircle2 } from 'lucide-react';
+import { updateRecord, getTodayRecord, getBankBalance, getLocationConfig } from '../services/storageService';
+import { Coffee, Utensils, LogOut, LogIn, MapPin, Wallet, AlertTriangle, Loader2, CheckCircle2, Building2 } from 'lucide-react';
 
 interface Props {
   onUpdate: (record: DailyRecord) => void;
@@ -23,6 +23,7 @@ export const TimeClock: React.FC<Props> = ({ onUpdate, employeeId }) => {
   const [totalBankBalance, setTotalBankBalance] = useState<number>(0);
   const [isPunching, setIsPunching] = useState<string | null>(null); // Stores the type being punched
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
+  const [isUsingFixedLocation, setIsUsingFixedLocation] = useState(false);
 
   useEffect(() => {
     const timer = setInterval(() => setCurrentTime(getCurrentTime()), 1000);
@@ -34,54 +35,73 @@ export const TimeClock: React.FC<Props> = ({ onUpdate, employeeId }) => {
     setTodayRecord(getTodayRecord(employeeId, today));
     setTotalBankBalance(getBankBalance(employeeId));
 
-    // Real Geolocation Implementation
-    if (navigator.geolocation) {
-      navigator.geolocation.getCurrentPosition(
-        async (position) => {
-          const lat = position.coords.latitude;
-          const lng = position.coords.longitude;
-          setCoords({ lat, lng });
-          
-          // 1. Define coordenadas como fallback imediato
-          const rawCoords = `${lat.toFixed(4)}, ${lng.toFixed(4)}`;
-          setLocationName(rawCoords);
+    // CHECK LOCATION STRATEGY
+    const locConfig = getLocationConfig();
 
-          // 2. Tenta obter o endereço legível (Reverse Geocoding via OpenStreetMap Nominatim)
-          try {
-              const response = await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}&zoom=18&addressdetails=1`);
-              const data = await response.json();
-              
-              if (data && data.address) {
-                  const road = data.address.road || data.address.pedestrian || '';
-                  const number = data.address.house_number || '';
-                  const suburb = data.address.suburb || data.address.neighbourhood || '';
-                  const city = data.address.city || data.address.town || data.address.municipality || '';
-                  
-                  let readableAddress = '';
-                  
-                  if (road) readableAddress += road;
-                  if (number) readableAddress += `, ${number}`;
-                  if (suburb) readableAddress += ` - ${suburb}`;
-                  else if (city) readableAddress += ` - ${city}`;
-
-                  if (readableAddress) {
-                      setLocationName(readableAddress);
-                  }
-              }
-          } catch (error) {
-              console.warn("Erro ao obter endereço legível:", error);
-              // Mantém as coordenadas se falhar
-          }
-        }, 
-        (error) => {
-          console.error("Geo error:", error);
-          setLocationName('Localização indisponível');
-          setCoords(null);
-        },
-        { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
-      );
+    if (locConfig.useFixed && locConfig.fixedName) {
+        setIsUsingFixedLocation(true);
+        setLocationName(locConfig.fixedName);
+        setCoords({ lat: 0, lng: 0 }); // Dummy coords for fixed location
     } else {
-      setLocationName('Geolocalização não suportada');
+        setIsUsingFixedLocation(false);
+        // Real Geolocation Implementation
+        if (navigator.geolocation) {
+          navigator.geolocation.getCurrentPosition(
+            async (position) => {
+              const lat = position.coords.latitude;
+              const lng = position.coords.longitude;
+              setCoords({ lat, lng });
+              
+              // 1. Define coordenadas como fallback imediato
+              const rawCoords = `${lat.toFixed(4)}, ${lng.toFixed(4)}`;
+              setLocationName(rawCoords);
+
+              // 2. Tenta obter o endereço legível
+              try {
+                  const response = await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}&zoom=18&addressdetails=1`);
+                  const data = await response.json();
+                  
+                  if (data && data.address) {
+                      const road = data.address.road || data.address.pedestrian || '';
+                      const number = data.address.house_number || '';
+                      const suburb = data.address.suburb || data.address.neighbourhood || '';
+                      const city = data.address.city || data.address.town || data.address.municipality || '';
+                      
+                      let readableAddress = '';
+                      
+                      if (road) readableAddress += road;
+                      if (number) readableAddress += `, ${number}`;
+                      if (suburb) readableAddress += ` - ${suburb}`;
+                      else if (city) readableAddress += ` - ${city}`;
+
+                      if (readableAddress) {
+                          setLocationName(readableAddress);
+                      }
+                  }
+              } catch (error) {
+                  // Silently fail to coordinates
+              }
+            }, 
+            (error) => {
+              // Handle error gracefully without spamming console warnings
+              let msg = 'Localização indisponível';
+              
+              if (error.code === 1) msg = 'Permissão de local negada';
+              else if (error.code === 2) msg = 'GPS indisponível';
+              else if (error.code === 3) msg = 'Sem sinal de GPS (PC)';
+              
+              setLocationName(msg);
+              setCoords(null);
+            },
+            { 
+                enableHighAccuracy: false, // Changed to false for better desktop compatibility (IP based)
+                timeout: 15000, 
+                maximumAge: 60000 
+            }
+          );
+        } else {
+          setLocationName('Geolocalização não suportada');
+        }
     }
   }, [employeeId]);
 
@@ -141,9 +161,6 @@ export const TimeClock: React.FC<Props> = ({ onUpdate, employeeId }) => {
   }) => {
     const isDone = getButtonStatus(type);
     const isLoading = isPunching === type;
-    
-    // Logic to disable future buttons if previous steps aren't taken (Optional strict mode)
-    // For now, we keep it flexible but visualize the "next logical step"
     
     return (
       <button
@@ -212,13 +229,16 @@ export const TimeClock: React.FC<Props> = ({ onUpdate, employeeId }) => {
         </p>
         
         <div 
-            className={`inline-flex items-center gap-2 px-3 py-1 rounded-full text-xs font-mono border max-w-md truncate
-            ${coords ? 'bg-blue-50 text-blue-700 border-blue-200' : 'bg-amber-50 text-amber-700 border-amber-200'}
+            className={`inline-flex items-center gap-2 px-3 py-1 rounded-full text-xs font-mono border max-w-md truncate transition-colors
+            ${isUsingFixedLocation 
+                ? 'bg-slate-100 text-slate-700 border-slate-300' 
+                : coords ? 'bg-blue-50 text-blue-700 border-blue-200' : 'bg-amber-50 text-amber-700 border-amber-200'}
             `}
             title={coords ? `Coordenadas: ${coords.lat}, ${coords.lng}` : 'Localização'}
         >
-            <MapPin size={12} className="shrink-0" /> 
+            {isUsingFixedLocation ? <Building2 size={12} className="shrink-0" /> : <MapPin size={12} className="shrink-0" />}
             <span className="truncate">{locationName}</span>
+            {isUsingFixedLocation && <span className="text-[9px] bg-slate-200 px-1 rounded ml-1 text-slate-500 uppercase font-bold">Fixo</span>}
         </div>
       </div>
 
