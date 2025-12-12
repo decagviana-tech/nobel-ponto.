@@ -291,7 +291,7 @@ export const Settings: React.FC<Props> = ({ onConfigSaved }) => {
           return;
       }
 
-      if (!confirm(`IMPORTANTE: REPARO DE PLANILHA\n\nIsso enviará ${total} registros para a nuvem.\n\nUse esta função se a planilha do Google estiver bagunçada ou incompleta. O sistema irá preencher as lacunas e corrigir os formatos.\n\nDeseja continuar?`)) return;
+      if (!confirm(`CONFIRMAÇÃO DE ENVIO:\n\nVocê está prestes a enviar ${total} registros do aplicativo para a Planilha do Google.\n\nIsso é ideal se você corrigiu dados aqui no App e quer atualizar a nuvem.\n\nContinuar?`)) return;
 
       setIsPushing(true);
       setPushProgress(0);
@@ -313,7 +313,7 @@ export const Settings: React.FC<Props> = ({ onConfigSaved }) => {
               await new Promise(r => setTimeout(r, 400));
           }
 
-          alert("✅ Reparo concluído com sucesso!\n\nVerifique sua planilha. Todas as linhas devem estar completas agora.");
+          alert("✅ Enviado com Sucesso!\n\nSeus dados corrigidos agora estão salvos na Planilha Google e acessíveis em outros computadores.");
       } catch (error) {
           console.error(error);
           alert("Ocorreu um erro durante o envio. Verifique sua conexão e tente novamente.");
@@ -496,7 +496,7 @@ export const Settings: React.FC<Props> = ({ onConfigSaved }) => {
                                 className="flex items-center justify-center gap-2 px-3 py-3 rounded-lg font-bold text-slate-700 bg-slate-100 hover:bg-slate-200 transition-all disabled:opacity-50 border border-slate-200 text-sm"
                             >
                                 <DownloadCloud size={18} className={isPulling ? 'animate-bounce' : ''} />
-                                {isPulling ? 'Baixando...' : 'Baixar'}
+                                {isPulling ? 'Baixar do Google (Restaurar)' : 'Baixar do Google (Restaurar)'}
                             </button>
 
                             <button 
@@ -507,12 +507,12 @@ export const Settings: React.FC<Props> = ({ onConfigSaved }) => {
                                 <div className={`absolute left-0 top-0 bottom-0 bg-white/20 transition-all duration-300`} style={{ width: `${pushProgress}%` }}></div>
                                 <div className="relative flex items-center gap-2">
                                     <UploadCloud size={18} className={isPushing ? 'animate-bounce' : ''} />
-                                    {isPushing ? `${pushProgress}%` : 'Reparar Planilha'}
+                                    {isPushing ? `${pushProgress}%` : 'Enviar Correções para Nuvem'}
                                 </div>
                             </button>
                         </div>
-                        <p className="text-[10px] text-center text-slate-400">
-                            Use "Reparar Planilha" para enviar seus dados locais e corrigir as datas na planilha.
+                        <p className="text-[10px] text-center text-slate-400 mt-2">
+                            <b>ATENÇÃO:</b> Se você corrigiu dados manualmente neste computador, clique em <b>Enviar Correções</b> para salvar na planilha.
                         </p>
                     </div>
                 )}
