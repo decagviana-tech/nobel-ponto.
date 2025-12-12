@@ -2,7 +2,7 @@
 import React, { useState, useEffect } from 'react';
 import { DailyRecord } from '../types';
 import { getRecords, updateRecord } from '../services/storageService';
-import { formatTime } from '../utils';
+import { formatTime, normalizeDate } from '../utils';
 import { Save, AlertCircle, Calculator, Printer, Filter } from 'lucide-react';
 
 interface Props {
@@ -48,7 +48,6 @@ export const SpreadsheetView: React.FC<Props> = ({ onUpdate, employeeId }) => {
   };
 
   const handlePrint = () => {
-      // Pequeno timeout para garantir que o DOM esteja pronto
       setTimeout(() => {
           window.print();
       }, 100);
@@ -63,9 +62,22 @@ export const SpreadsheetView: React.FC<Props> = ({ onUpdate, employeeId }) => {
     { key: 'exit', label: 'Saída', width: 'w-20' },
   ];
 
+  // FILTRAGEM ROBUSTA DE DATAS
   const filteredRecords = records.filter(r => {
-      const d = new Date(r.date + 'T00:00:00');
+      // 1. Normaliza a data para YYYY-MM-DD
+      const isoDate = normalizeDate(r.date);
+      // 2. Cria objeto Date seguro (adiciona T00:00:00 para evitar fuso horário -1 dia)
+      const d = new Date(isoDate + 'T00:00:00');
+      
+      // Verifica se a data é válida antes de filtrar
+      if (isNaN(d.getTime())) return false;
+
       return d.getMonth() === selectedMonth && d.getFullYear() === selectedYear;
+  });
+
+  // Ordena por data (decrescente ou crescente)
+  filteredRecords.sort((a, b) => {
+      return new Date(normalizeDate(a.date)).getTime() - new Date(normalizeDate(b.date)).getTime();
   });
 
   const totalWorkedAll = filteredRecords.reduce((acc, r) => acc + (r.totalMinutes || 0), 0);
@@ -81,7 +93,7 @@ export const SpreadsheetView: React.FC<Props> = ({ onUpdate, employeeId }) => {
   return (
     <div className="w-full overflow-hidden bg-white rounded-xl shadow-sm border border-slate-200 flex flex-col h-full print:shadow-none print:border-none print:h-auto print:overflow-visible print:block">
       
-      {/* HEADER DE AÇÕES (ESCONDIDO NA IMPRESSÃO) */}
+      {/* HEADER DE AÇÕES */}
       <div className="p-4 border-b border-slate-100 bg-slate-50 flex flex-col md:flex-row justify-between items-center gap-4 print:hidden">
         <div className="flex items-center gap-4">
              <div className="flex items-center gap-2 bg-white border border-slate-200 rounded-lg p-1 shadow-sm">
@@ -119,7 +131,7 @@ export const SpreadsheetView: React.FC<Props> = ({ onUpdate, employeeId }) => {
         </div>
       </div>
 
-      {/* ÁREA DE IMPRESSÃO (MARCADA COM ID ESPECÍFICO PARA O CSS) */}
+      {/* ÁREA DE IMPRESSÃO */}
       <div id="printable-content" className="flex flex-col h-full">
         <div className="hidden print:block p-6 border-b border-slate-200 mb-4">
             <h1 className="text-2xl font-bold text-slate-800">Relatório de Ponto - Nobel Petrópolis</h1>
@@ -147,11 +159,13 @@ export const SpreadsheetView: React.FC<Props> = ({ onUpdate, employeeId }) => {
                 )}
                 {filteredRecords.map((record) => {
                 const isEditing = editingId === record.date;
+                const isoDate = normalizeDate(record.date);
                 
                 return (
                     <tr key={record.date} className={`hover:bg-slate-50 transition-colors ${isEditing ? 'bg-blue-50' : ''} print:hover:bg-white`}>
                     <td className="px-4 py-3 font-medium whitespace-nowrap text-slate-800">
-                        {new Date(record.date + 'T00:00:00').toLocaleDateString('pt-BR')}
+                        {/* Exibe formatado em BR, mas usa o ISO para criar o objeto */}
+                        {new Date(isoDate + 'T00:00:00').toLocaleDateString('pt-BR')}
                     </td>
                     
                     {fields.map(f => (

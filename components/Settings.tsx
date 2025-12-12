@@ -4,13 +4,14 @@ import { getGoogleConfig, saveGoogleConfig, getLocationConfig, saveLocationConfi
 import { readSheetData, readEmployeesFromSheet, syncRowToSheet } from '../services/googleSheetsService';
 import { mergeExternalRecords, mergeExternalEmployees } from '../services/storageService';
 import { GoogleConfig } from '../types';
-import { Save, Database, CheckCircle, Link, Trash2, HelpCircle, Activity, Lock, MapPin, Building2, DownloadCloud, UploadCloud, Code, Copy, X, AlertTriangle, RefreshCw } from 'lucide-react';
+import { Save, Database, CheckCircle, Link, Trash2, HelpCircle, Activity, Lock, MapPin, Building2, DownloadCloud, UploadCloud, Code, Copy, X, AlertTriangle, RefreshCw, FileSpreadsheet } from 'lucide-react';
+import { ImportModal } from './ImportModal';
 
 interface Props {
   onConfigSaved: () => void;
 }
 
-const CURRENT_SCRIPT_VERSION = '2.2';
+const CURRENT_SCRIPT_VERSION = '2.4';
 
 const APPS_SCRIPT_CODE = `
 // ==========================================
@@ -81,11 +82,16 @@ function cleanTime(val) {
 }
 
 function convertBrDateToIso(dateStr) {
+  if (!dateStr) return "";
   // Se vier 25/11/2025 transforma em 2025-11-25
+  // Se vier 1/11/2025 transforma em 2025-11-01
   if (dateStr.includes('/')) {
     const parts = dateStr.split('/');
     if (parts.length === 3) {
-      return parts[2] + '-' + parts[1] + '-' + parts[0];
+      const d = parts[0].length === 1 ? "0" + parts[0] : parts[0];
+      const m = parts[1].length === 1 ? "0" + parts[1] : parts[1];
+      const y = parts[2];
+      if (y.length === 4) return y + '-' + m + '-' + d;
     }
   }
   return dateStr;
@@ -125,12 +131,15 @@ function saveOrUpdateRow(data) {
   
   let rowIndex = -1;
   
-  // Procura linha existente pela Data + ID
+  // LOGICA DE COMPARAÇÃO "BILINGUE" (BR e ISO)
+  // O app manda ISO (YYYY-MM-DD), mas a planilha pode ter BR (DD/MM/YYYY)
   for (let i = 1; i < values.length; i++) {
-    const rowDate = formatDate(values[i][0]);
+    const rawSheetDate = formatDate(values[i][0]); // Pega o que está na planilha
+    const isoSheetDate = convertBrDateToIso(rawSheetDate); // Converte para ISO para comparar
+    
     const rowId = String(values[i][1]);
     
-    if (rowDate === data.date && rowId === String(data.employeeId)) {
+    if (isoSheetDate === data.date && rowId === String(data.employeeId)) {
       rowIndex = i + 1;
       break;
     }
@@ -148,7 +157,7 @@ function saveOrUpdateRow(data) {
   sheet.getRange(rowIndex, 4, 1, 6).setNumberFormat(textFormat); // Horários (Entry até Exit)
 
   const rowData = [
-    data.date,
+    data.date, // Salva sempre em ISO ou como veio do app
     String(data.employeeId),
     data.employeeName,
     "'" + data.entry,       // O apóstrofo força formato texto
@@ -201,7 +210,7 @@ function formatDate(dateObj) {
   if (!dateObj) return "";
   if (typeof dateObj === 'string') return dateObj;
   try {
-    return Utilities.formatDate(dateObj, Session.getScriptTimeZone(), "yyyy-MM-dd");
+    return Utilities.formatDate(dateObj, Session.getScriptTimeZone(), "dd/MM/yyyy");
   } catch(e) {
     return "";
   }
@@ -217,6 +226,7 @@ export const Settings: React.FC<Props> = ({ onConfigSaved }) => {
   const [isPushing, setIsPushing] = useState(false);
   const [pushProgress, setPushProgress] = useState(0);
   const [showScriptCode, setShowScriptCode] = useState(false);
+  const [showImportModal, setShowImportModal] = useState(false);
 
   useEffect(() => {
     setConfig(getGoogleConfig());
@@ -281,7 +291,7 @@ export const Settings: React.FC<Props> = ({ onConfigSaved }) => {
           return;
       }
 
-      if (!confirm(`Você tem ${total} registros salvos neste aplicativo (Computador).\n\nAtenção: Esta ação enviará todos eles para a planilha, corrigindo datas e cálculos errados lá.\n\nDeseja iniciar o reparo?`)) return;
+      if (!confirm(`IMPORTANTE: REPARO DE PLANILHA\n\nIsso enviará ${total} registros para a nuvem.\n\nUse esta função se a planilha do Google estiver bagunçada ou incompleta. O sistema irá preencher as lacunas e corrigir os formatos.\n\nDeseja continuar?`)) return;
 
       setIsPushing(true);
       setPushProgress(0);
@@ -300,10 +310,10 @@ export const Settings: React.FC<Props> = ({ onConfigSaved }) => {
               setPushProgress(Math.round(((i + 1) / total) * 100));
               
               // Pequeno delay para não sobrecarregar
-              await new Promise(r => setTimeout(r, 600));
+              await new Promise(r => setTimeout(r, 400));
           }
 
-          alert("✅ Reparo concluído com sucesso!\n\nVerifique sua planilha. As datas devem estar corretas agora.");
+          alert("✅ Reparo concluído com sucesso!\n\nVerifique sua planilha. Todas as linhas devem estar completas agora.");
       } catch (error) {
           console.error(error);
           alert("Ocorreu um erro durante o envio. Verifique sua conexão e tente novamente.");
@@ -346,6 +356,16 @@ export const Settings: React.FC<Props> = ({ onConfigSaved }) => {
   return (
     <div className="max-w-2xl mx-auto animate-fade-in pb-10">
       
+      {showImportModal && (
+          <ImportModal 
+            onClose={() => setShowImportModal(false)}
+            onSuccess={() => {
+                alert("Dados importados com sucesso!");
+                onConfigSaved();
+            }}
+          />
+      )}
+
       {/* Script Code Modal */}
       {showScriptCode && (
           <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/80 backdrop-blur-sm p-4">
@@ -425,7 +445,7 @@ export const Settings: React.FC<Props> = ({ onConfigSaved }) => {
                                 <span className="bg-indigo-200 text-indigo-800 text-[10px] px-1.5 py-0.5 rounded-full font-bold">v{CURRENT_SCRIPT_VERSION}</span>
                             </div>
                             <p className="text-xs text-indigo-700 mb-3">
-                                Este código corrige o erro das datas (1899) e formatação.
+                                Corrigido para identificar datas no formato BR e ISO.
                             </p>
                             <button 
                                 onClick={() => setShowScriptCode(true)}
@@ -496,6 +516,37 @@ export const Settings: React.FC<Props> = ({ onConfigSaved }) => {
                         </p>
                     </div>
                 )}
+            </div>
+        </div>
+
+        {/* SECTION 1.5: LOCAL DATA MANAGEMENT */}
+        <div className="pt-6 border-t border-slate-200">
+             <div className="flex items-center gap-3 mb-6">
+                <div className="bg-emerald-100 p-3 rounded-full text-emerald-700">
+                    <FileSpreadsheet size={24} />
+                </div>
+                <div>
+                    <h2 className="text-xl font-bold text-slate-800">Gestão de Dados Locais</h2>
+                    <p className="text-slate-500 text-sm">Backup e Importação</p>
+                </div>
+            </div>
+
+            <div className="bg-slate-50 p-4 rounded-xl border border-slate-200">
+                <div className="flex items-center justify-between">
+                    <div>
+                        <h4 className="font-bold text-slate-700 text-sm">Importar Backup (Excel)</h4>
+                        <p className="text-xs text-slate-500 max-w-sm">
+                            Copie dados de uma planilha externa e cole aqui para preencher dias faltantes.
+                        </p>
+                    </div>
+                    <button 
+                        onClick={() => setShowImportModal(true)}
+                        className="bg-white border border-emerald-200 text-emerald-700 hover:bg-emerald-50 px-4 py-2 rounded-lg text-sm font-bold transition-colors shadow-sm flex items-center gap-2"
+                    >
+                        <UploadCloud size={16} />
+                        Importar Dados
+                    </button>
+                </div>
             </div>
         </div>
 
