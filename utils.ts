@@ -43,10 +43,15 @@ export const timeStringToMinutes = (timeStr: string): number | null => {
 export const normalizeDate = (dateStr: string): string => {
   if (!dateStr) return '';
   
-  // Se encontrar formato DD/MM/YYYY (comum no Brasil/Excel), converte para YYYY-MM-DD
-  if (/^\d{2}\/\d{2}\/\d{4}$/.test(dateStr)) {
-      const [d, m, y] = dateStr.split('/');
-      return `${y}-${m}-${d}`;
+  // Se encontrar barra, assume formato BR (D/M/Y ou DD/MM/YYYY) e converte para ISO
+  if (dateStr.includes('/')) {
+      const parts = dateStr.split('/');
+      if (parts.length === 3) {
+          const d = parts[0].padStart(2, '0');
+          const m = parts[1].padStart(2, '0');
+          const y = parts[2];
+          return `${y}-${m}-${d}`;
+      }
   }
   
   return dateStr;
