@@ -1,6 +1,6 @@
 
 import { DailyRecord, Employee, GoogleConfig, BankTransaction } from '../types';
-import { calculateDailyStats, normalizeTimeFromSheet } from '../utils';
+import { calculateDailyStats, normalizeTimeFromSheet, normalizeDate } from '../utils';
 
 const STORAGE_KEY_RECORDS = 'smartpoint_records_v2';
 const STORAGE_KEY_EMPLOYEES = 'smartpoint_employees_v1';
@@ -116,8 +116,7 @@ export const getAllRecords = (): DailyRecord[] => {
     const data = localStorage.getItem(STORAGE_KEY_RECORDS);
     let records: DailyRecord[] = data ? JSON.parse(data) : [];
     
-    // IMPORTANTE: Isso força o recálculo toda vez que os dados são lidos
-    // Corrige automaticamente erros de soma antigos
+    // IMPORTANTE: Isso força o recálculo e a NORMALIZAÇÃO DE DATAS toda vez que os dados são lidos
     return deduplicateRecords(records);
 };
 
@@ -128,13 +127,18 @@ const deduplicateRecords = (records: DailyRecord[]): DailyRecord[] => {
     records.forEach(r => {
         if (!r.date || !r.employeeId) return;
         
+        // CORREÇÃO CRÍTICA: Normaliza a data para YYYY-MM-DD se vier como DD/MM/YYYY
+        // Isso recupera registros que "sumiram" por causa do formato da chave
+        const fixedDate = normalizeDate(r.date);
+
         // CHAVE ÚNICA: DATA + ID
-        const key = `${r.date}_${r.employeeId}`;
+        const key = `${fixedDate}_${r.employeeId}`;
         const existing = map.get(key);
 
-        // 1. LIMPEZA DOS HORÁRIOS (Remove segundos e datas malucas)
+        // 1. LIMPEZA DOS HORÁRIOS
         const cleanRecord = {
             ...r,
+            date: fixedDate, // Garante que o registro salvo tenha a data corrigida
             entry: normalizeTimeFromSheet(r.entry),
             lunchStart: normalizeTimeFromSheet(r.lunchStart),
             lunchEnd: normalizeTimeFromSheet(r.lunchEnd),
@@ -147,15 +151,12 @@ const deduplicateRecords = (records: DailyRecord[]): DailyRecord[] => {
         let finalRecord = cleanRecord;
 
         if (existing) {
-            // Se já existe registro para este dia, vamos combinar o melhor dos dois mundos
-            // Priorizamos o registro que tem mais campos preenchidos
             const existingFields = countFields(existing);
             const newFields = countFields(cleanRecord);
             
             if (newFields > existingFields) {
                  finalRecord = cleanRecord;
             } else {
-                 // Fusão campo a campo para não perder nada
                  const merged = { ...existing };
                  if (!merged.entry && cleanRecord.entry) merged.entry = cleanRecord.entry;
                  if (!merged.exit && cleanRecord.exit) merged.exit = cleanRecord.exit;
@@ -169,7 +170,6 @@ const deduplicateRecords = (records: DailyRecord[]): DailyRecord[] => {
         }
 
         // 3. RECÁLCULO MATEMÁTICO OBRIGATÓRIO
-        // Isso conserta o problema de "0h trabalhadas" retroativamente
         const stats = calculateDailyStats(finalRecord);
         finalRecord.totalMinutes = stats.total;
         finalRecord.balanceMinutes = stats.balance;
@@ -204,10 +204,11 @@ export const saveAllRecords = (records: DailyRecord[]) => {
 
 export const replaceAllRecords = (newRecords: DailyRecord[]) => {
   // Chamado quando baixamos tudo da Planilha ("Hard Sync")
-  // Precisamos processar tudo para garantir que o formato local esteja perfeito
   const processed = newRecords.map(r => {
+     const fixedDate = normalizeDate(r.date);
      const cleanR = {
         ...r,
+        date: fixedDate,
         entry: normalizeTimeFromSheet(r.entry),
         lunchStart: normalizeTimeFromSheet(r.lunchStart),
         lunchEnd: normalizeTimeFromSheet(r.lunchEnd),
@@ -227,7 +228,7 @@ export const mergeExternalRecords = (externalRecords: DailyRecord[]) => {
   const localRecords = getAllRecords(); 
   const combined = [...localRecords, ...externalRecords];
   
-  // A mágica acontece aqui: deduplicateRecords limpa, corrige formatos e recalcula
+  // Deduplicate will handle cleanup and normalization
   const uniqueRecords = deduplicateRecords(combined);
   uniqueRecords.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
   
@@ -236,6 +237,7 @@ export const mergeExternalRecords = (externalRecords: DailyRecord[]) => {
 
 export const getTodayRecord = (employeeId: string, date: string): DailyRecord => {
   const records = getRecords(employeeId);
+  // Como 'getAllRecords' agora normaliza tudo, a busca por data ISO (YYYY-MM-DD) vai funcionar
   const existing = records.find(r => r.date === date);
   if (existing) return existing;
   
@@ -256,11 +258,14 @@ export const getTodayRecord = (employeeId: string, date: string): DailyRecord =>
 export const updateRecord = (updatedRecord: DailyRecord): DailyRecord[] => {
   let allRecords = getAllRecords();
   
-  // Remove versão antiga deste dia para sobrescrever
-  allRecords = allRecords.filter(r => !(r.date === updatedRecord.date && r.employeeId === updatedRecord.employeeId));
+  // Garante data normalizada também no update
+  const fixedDate = normalizeDate(updatedRecord.date);
+  
+  allRecords = allRecords.filter(r => !(r.date === fixedDate && r.employeeId === updatedRecord.employeeId));
 
   const cleanRecord = {
         ...updatedRecord,
+        date: fixedDate,
         entry: normalizeTimeFromSheet(updatedRecord.entry),
         lunchStart: normalizeTimeFromSheet(updatedRecord.lunchStart),
         lunchEnd: normalizeTimeFromSheet(updatedRecord.lunchEnd),

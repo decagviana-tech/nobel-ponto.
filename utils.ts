@@ -39,6 +39,19 @@ export const timeStringToMinutes = (timeStr: string): number | null => {
   return h * 60 + m;
 };
 
+// FUNÇÃO DE LIMPEZA DE DATA (RECUPERA DADOS PERDIDOS)
+export const normalizeDate = (dateStr: string): string => {
+  if (!dateStr) return '';
+  
+  // Se encontrar formato DD/MM/YYYY (comum no Brasil/Excel), converte para YYYY-MM-DD
+  if (/^\d{2}\/\d{2}\/\d{4}$/.test(dateStr)) {
+      const [d, m, y] = dateStr.split('/');
+      return `${y}-${m}-${d}`;
+  }
+  
+  return dateStr;
+};
+
 // FUNÇÃO DE LIMPEZA REFORÇADA (ANTI-1899 e ANTI-SEGUNDOS)
 export const normalizeTimeFromSheet = (val: any): string => {
   if (!val) return '';
