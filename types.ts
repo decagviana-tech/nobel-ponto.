@@ -4,9 +4,10 @@ export type TimeRecordType = 'entry' | 'lunchStart' | 'lunchEnd' | 'snackStart' 
 export interface Employee {
   id: string;
   name: string;
-  role: string; // e.g., 'Desenvolvedor', 'Gerente'
-  pin: string; // Simple pin for access if needed later
+  role: string;
+  pin: string;
   active: boolean;
+  shortDayOfWeek?: number; // 0-6 (0=Dom, 1=Seg, ..., 6=Sáb). Padrão é 6 (Sábado).
 }
 
 export interface DailyRecord {
@@ -32,18 +33,13 @@ export interface BankTransaction {
   employeeId: string;
   date: string;
   type: TransactionType;
-  amountMinutes: number; // Positive adds to bank, Negative removes
+  amountMinutes: number;
   description: string;
   createdAt: string;
 }
 
-export interface UserSettings {
-  dailyTargetMinutes: number; // Default 480 (8 hours)
-  weeklyTargetMinutes: number; // Default 2640 (44 hours)
-}
-
 export interface GoogleConfig {
-  scriptUrl: string; // The Web App URL from Apps Script
+  scriptUrl: string;
   enabled: boolean;
 }
 
