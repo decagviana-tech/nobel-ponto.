@@ -3,7 +3,7 @@ import { DailyRecord, Employee } from '../types';
 import { minutesToHHMM, normalizeTimeFromSheet } from '../utils';
 
 export const readEmployeesFromSheet = async (scriptUrl: string): Promise<Employee[] | null> => {
-    if (!scriptUrl) return null; // Prevent fetch errors
+    if (!scriptUrl) return null;
     try {
         const response = await fetch(`${scriptUrl}?action=getEmployees`);
         if (!response.ok) throw new Error("Network response was not ok");
@@ -12,7 +12,7 @@ export const readEmployeesFromSheet = async (scriptUrl: string): Promise<Employe
         return data.map((emp: any) => ({
             ...emp,
             id: String(emp.id),
-            pin: String(emp.pin || '') // FORCE STRING CONVERSION FOR PIN
+            pin: String(emp.pin || '')
         }));
     } catch (error) {
         console.error("Error fetching employees from script", error);
@@ -21,14 +21,13 @@ export const readEmployeesFromSheet = async (scriptUrl: string): Promise<Employe
 };
 
 export const readSheetData = async (scriptUrl: string): Promise<DailyRecord[] | null> => {
-  if (!scriptUrl) return null; // Prevent fetch errors
+  if (!scriptUrl) return null;
   try {
     const response = await fetch(`${scriptUrl}?action=getRecords`);
     if (!response.ok) throw new Error("Network response was not ok");
     const data = await response.json();
     if (!Array.isArray(data)) return null;
     
-    // AQUI APLICAMOS A LIMPEZA DAS HORAS
     return data.map((rec: any) => ({
         ...rec,
         employeeId: String(rec.employeeId),
@@ -45,15 +44,32 @@ export const readSheetData = async (scriptUrl: string): Promise<DailyRecord[] | 
   }
 };
 
+export const clearCloudRecords = async (scriptUrl: string, employeeId: string) => {
+    if (!scriptUrl) return;
+    try {
+        await fetch(scriptUrl, {
+            method: 'POST',
+            mode: 'no-cors',
+            keepalive: true,
+            headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+            body: JSON.stringify({
+                action: 'deleteRecords',
+                data: { employeeId: String(employeeId) }
+            })
+        });
+        return true;
+    } catch (e) {
+        console.error("Erro ao limpar nuvem:", e);
+        return false;
+    }
+};
+
 export const syncRowToSheet = async (scriptUrl: string, record: DailyRecord, employeeName: string, currentTotalBalance: number) => {
   if (!scriptUrl) return;
   try {
-    // Convert numbers to HH:MM format for the sheet
-    // This ensures the sheet displays exactly what the app calculated
     const totalFormatted = minutesToHHMM(record.totalMinutes);
     const balanceFormatted = minutesToHHMM(record.balanceMinutes);
 
-    // keepalive ensures the request outlives the page/component lifecycle
     await fetch(scriptUrl, {
         method: 'POST',
         mode: 'no-cors',
@@ -68,8 +84,8 @@ export const syncRowToSheet = async (scriptUrl: string, record: DailyRecord, emp
                 employeeId: String(record.employeeId), 
                 employeeName,
                 currentTotalBalance,
-                totalFormatted,   // Sending pre-calculated string
-                balanceFormatted  // Sending pre-calculated string
+                totalFormatted,
+                balanceFormatted
             }
         })
     });

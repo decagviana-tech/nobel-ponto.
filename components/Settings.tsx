@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect } from 'react';
 import { getGoogleConfig, saveGoogleConfig, getLocationConfig, saveLocationConfig, LocationConfig, getAllRecords, getEmployees, getBankBalance } from '../services/storageService';
 import { readSheetData, readEmployeesFromSheet, syncRowToSheet } from '../services/googleSheetsService';
@@ -7,11 +6,7 @@ import { GoogleConfig } from '../types';
 import { Save, Database, CheckCircle, Link, Trash2, HelpCircle, Activity, Lock, MapPin, Building2, DownloadCloud, UploadCloud, Code, Copy, X, AlertTriangle, RefreshCw, FileSpreadsheet } from 'lucide-react';
 import { ImportModal } from './ImportModal';
 
-interface Props {
-  onConfigSaved: () => void;
-}
-
-const CURRENT_SCRIPT_VERSION = '2.4';
+const CURRENT_SCRIPT_VERSION = '2.5';
 
 const APPS_SCRIPT_CODE = `
 // ==========================================
@@ -34,7 +29,6 @@ function doGet(e) {
     let empSheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName("Funcionarios");
     if (!empSheet) return ContentService.createTextOutput(JSON.stringify([])).setMimeType(ContentService.MimeType.JSON);
     
-    // getDisplayValues garante que venha como TEXTO e não objeto de data
     const rows = empSheet.getDataRange().getDisplayValues();
     const employees = [];
     for (let i = 1; i < rows.length; i++) {
@@ -52,14 +46,12 @@ function doGet(e) {
   }
 
   if (action === 'getRecords') {
-    // getDisplayValues é o SEGREDO para não vir datas 1899-12-30
     const rows = sheet.getDataRange().getDisplayValues(); 
     const records = [];
-    // Pula cabeçalho
     for (let i = 1; i < rows.length; i++) {
       if (rows[i][0]) {
         records.push({
-          date: convertBrDateToIso(rows[i][0]), // Converte DD/MM/YYYY para YYYY-MM-DD se necessário
+          date: convertBrDateToIso(rows[i][0]),
           employeeId: String(rows[i][1]),
           entry: cleanTime(rows[i][3]),
           lunchStart: cleanTime(rows[i][4]),
@@ -83,8 +75,6 @@ function cleanTime(val) {
 
 function convertBrDateToIso(dateStr) {
   if (!dateStr) return "";
-  // Se vier 25/11/2025 transforma em 2025-11-25
-  // Se vier 1/11/2025 transforma em 2025-11-01
   if (dateStr.includes('/')) {
     const parts = dateStr.split('/');
     if (parts.length === 3) {
@@ -115,11 +105,29 @@ function doPost(e) {
        saveOrUpdateEmployee(data);
        return ContentService.createTextOutput(JSON.stringify({ status: 'success' })).setMimeType(ContentService.MimeType.JSON);
     }
+
+    if (action === 'deleteRecords') {
+       deleteEmployeeRecords(data.employeeId);
+       return ContentService.createTextOutput(JSON.stringify({ status: 'success' })).setMimeType(ContentService.MimeType.JSON);
+    }
     
   } catch (err) {
     return ContentService.createTextOutput(JSON.stringify({ status: 'error', message: err.toString() })).setMimeType(ContentService.MimeType.JSON);
   } finally {
     lock.releaseLock();
+  }
+}
+
+function deleteEmployeeRecords(employeeId) {
+  const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheets()[0];
+  const rows = sheet.getDataRange().getValues();
+  const idToClean = String(employeeId);
+  
+  // Deletar de baixo para cima para não quebrar os índices
+  for (let i = rows.length - 1; i >= 1; i--) {
+    if (String(rows[i][1]) === idToClean) {
+      sheet.deleteRow(i + 1);
+    }
   }
 }
 
@@ -130,13 +138,9 @@ function saveOrUpdateRow(data) {
   const values = range.getValues(); 
   
   let rowIndex = -1;
-  
-  // LOGICA DE COMPARAÇÃO "BILINGUE" (BR e ISO)
-  // O app manda ISO (YYYY-MM-DD), mas a planilha pode ter BR (DD/MM/YYYY)
   for (let i = 1; i < values.length; i++) {
-    const rawSheetDate = formatDate(values[i][0]); // Pega o que está na planilha
-    const isoSheetDate = convertBrDateToIso(rawSheetDate); // Converte para ISO para comparar
-    
+    const rawSheetDate = formatDate(values[i][0]);
+    const isoSheetDate = convertBrDateToIso(rawSheetDate);
     const rowId = String(values[i][1]);
     
     if (isoSheetDate === data.date && rowId === String(data.employeeId)) {
@@ -145,22 +149,18 @@ function saveOrUpdateRow(data) {
     }
   }
   
-  if (rowIndex === -1) {
-    rowIndex = lastRow + 1;
-  }
+  if (rowIndex === -1) rowIndex = lastRow + 1;
   
-  // FORMATAÇÃO FORÇADA DE TEXTO
-  // Isso impede que o Google transforme "13:06" em data
   const textFormat = "@";
-  sheet.getRange(rowIndex, 1).setNumberFormat(textFormat); // Data
-  sheet.getRange(rowIndex, 2).setNumberFormat(textFormat); // ID
-  sheet.getRange(rowIndex, 4, 1, 6).setNumberFormat(textFormat); // Horários (Entry até Exit)
+  sheet.getRange(rowIndex, 1).setNumberFormat(textFormat);
+  sheet.getRange(rowIndex, 2).setNumberFormat(textFormat);
+  sheet.getRange(rowIndex, 4, 1, 6).setNumberFormat(textFormat);
 
   const rowData = [
-    data.date, // Salva sempre em ISO ou como veio do app
+    data.date,
     String(data.employeeId),
     data.employeeName,
-    "'" + data.entry,       // O apóstrofo força formato texto
+    "'" + data.entry,
     "'" + data.lunchStart,
     "'" + data.lunchEnd,
     "'" + data.snackStart,
@@ -184,7 +184,6 @@ function saveOrUpdateEmployee(data) {
   
   const values = sheet.getDataRange().getValues();
   let rowIndex = -1;
-  
   for (let i = 1; i < values.length; i++) {
      if (String(values[i][0]) === String(data.id)) {
        rowIndex = i + 1;
@@ -217,6 +216,11 @@ function formatDate(dateObj) {
 }
 `;
 
+// Define Props interface for the Settings component
+interface Props {
+  onConfigSaved: () => void;
+}
+
 export const Settings: React.FC<Props> = ({ onConfigSaved }) => {
   const [config, setConfig] = useState<GoogleConfig>({ scriptUrl: '', enabled: false });
   const [locConfig, setLocConfig] = useState<LocationConfig>({ useFixed: false, fixedName: '' });
@@ -241,11 +245,9 @@ export const Settings: React.FC<Props> = ({ onConfigSaved }) => {
     }
     
     saveLocationConfig(locConfig);
-
     const newConfig = { scriptUrl: cleanUrl, enabled: !!cleanUrl };
     saveGoogleConfig(newConfig);
     setConfig(newConfig);
-    
     setStatus('saved');
     onConfigSaved();
     setTimeout(() => setStatus('idle'), 2000);
@@ -266,11 +268,9 @@ export const Settings: React.FC<Props> = ({ onConfigSaved }) => {
       try {
           const sheetEmployees = await readEmployeesFromSheet(config.scriptUrl);
           if (sheetEmployees) mergeExternalEmployees(sheetEmployees);
-
           const sheetRecords = await readSheetData(config.scriptUrl);
           if (sheetRecords) mergeExternalRecords(sheetRecords);
-
-          alert("Sincronização Completa!\n\nOs dados da planilha foram baixados e mesclados com os dados locais.");
+          alert("Sincronização Completa!\n\nOs dados da planilha foram baixados e mesclados.");
           onConfigSaved();
       } catch (error) {
           alert("Erro ao baixar dados. Verifique sua conexão.");
@@ -282,45 +282,28 @@ export const Settings: React.FC<Props> = ({ onConfigSaved }) => {
 
   const handleForcePush = async () => {
       if (!config.scriptUrl) return;
-      
       const allRecords = getAllRecords();
       const total = allRecords.length;
-
-      if (total === 0) {
-          alert("Não há registros locais para enviar.");
-          return;
-      }
-
-      if (!confirm(`CONFIRMAÇÃO DE ENVIO:\n\nVocê está prestes a enviar ${total} registros do aplicativo para a Planilha do Google.\n\nIsso é ideal se você corrigiu dados aqui no App e quer atualizar a nuvem.\n\nContinuar?`)) return;
-
+      if (total === 0) { alert("Não há registros locais para enviar."); return; }
+      if (!confirm(`Você está prestes a enviar ${total} registros para a Planilha Google. Continuar?`)) return;
       setIsPushing(true);
       setPushProgress(0);
-      
       try {
           const employees = getEmployees();
-          
           for (let i = 0; i < total; i++) {
               const record = allRecords[i];
               const emp = employees.find(e => e.id === record.employeeId);
               const empName = emp ? emp.name : 'Desconhecido';
               const balance = getBankBalance(record.employeeId);
-              
               await syncRowToSheet(config.scriptUrl, record, empName, balance);
-              
               setPushProgress(Math.round(((i + 1) / total) * 100));
-              
-              // Pequeno delay para não sobrecarregar
               await new Promise(r => setTimeout(r, 400));
           }
-
-          alert("✅ Enviado com Sucesso!\n\nSeus dados corrigidos agora estão salvos na Planilha Google e acessíveis em outros computadores.");
+          alert("✅ Enviado com Sucesso!");
       } catch (error) {
           console.error(error);
-          alert("Ocorreu um erro durante o envio. Verifique sua conexão e tente novamente.");
-      } finally {
-          setIsPushing(false);
-          setPushProgress(0);
-      }
+          alert("Erro durante o envio.");
+      } finally { setIsPushing(false); setPushProgress(0); }
   };
 
   const handleTestConnection = async () => {
@@ -329,287 +312,91 @@ export const Settings: React.FC<Props> = ({ onConfigSaved }) => {
     try {
         const response = await fetch(`${config.scriptUrl}?action=test`);
         const data = await response.json();
-        
         if (data.status === 'success') {
             if (data.version !== CURRENT_SCRIPT_VERSION) {
-                alert(`⚠️ ATENÇÃO: SCRIPT DESATUALIZADO\n\nVersão do App: ${CURRENT_SCRIPT_VERSION}\nVersão no Google: ${data.version || 'Antiga'}\n\nPara corrigir a bagunça na planilha, você PRECISA atualizar o código.\n\nClique em "Ver Código do Script", copie e cole lá no Google.`);
+                alert(`⚠️ SCRIPT DESATUALIZADO (v${data.version})\n\nO App requer v${CURRENT_SCRIPT_VERSION}. Por favor, copie o novo código.`);
                 setShowScriptCode(true);
             } else {
-                alert('✅ Conexão Perfeita!\n\nO servidor respondeu e está na versão correta (' + data.version + ').');
+                alert('✅ Conexão Ativa! Versão ' + data.version);
             }
-        } else {
-            alert('⚠️ O servidor respondeu, mas com um erro: ' + (data.message || 'Erro desconhecido'));
         }
     } catch (error) {
-        console.error(error);
-        alert('❌ Falha na Conexão.\n\nVerifique se:\n1. A URL termina com /exec\n2. Você publicou como "App da Web"\n3. O acesso está definido para "Qualquer pessoa"');
-    } finally {
-        setIsTesting(false);
-    }
+        alert('❌ Falha na Conexão.');
+    } finally { setIsTesting(false); }
   };
 
   const copyToClipboard = () => {
       navigator.clipboard.writeText(APPS_SCRIPT_CODE);
-      alert("Código copiado! Cole no Editor de Script do Google.");
+      alert("Código v2.5 copiado!");
   };
 
   return (
     <div className="max-w-2xl mx-auto animate-fade-in pb-10">
-      
-      {showImportModal && (
-          <ImportModal 
-            onClose={() => setShowImportModal(false)}
-            onSuccess={() => {
-                alert("Dados importados com sucesso!");
-                onConfigSaved();
-            }}
-          />
-      )}
+      {showImportModal && <ImportModal onClose={() => setShowImportModal(false)} onSuccess={() => onConfigSaved()} />}
 
-      {/* Script Code Modal */}
       {showScriptCode && (
           <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/80 backdrop-blur-sm p-4">
               <div className="bg-white rounded-2xl w-full max-w-3xl h-[80vh] flex flex-col shadow-2xl">
                   <div className="p-4 border-b border-slate-200 flex justify-between items-center bg-slate-50 rounded-t-2xl">
                       <h3 className="font-bold text-slate-800 flex items-center gap-2">
                           <Code size={20} className="text-indigo-600" />
-                          Código do Servidor (Apps Script) v{CURRENT_SCRIPT_VERSION}
+                          Código do Servidor v{CURRENT_SCRIPT_VERSION}
                       </h3>
-                      <button onClick={() => setShowScriptCode(false)} className="p-2 hover:bg-slate-200 rounded-full">
-                          <X size={20} />
-                      </button>
+                      <button onClick={() => setShowScriptCode(false)} className="p-2 hover:bg-slate-200 rounded-full"><X size={20} /></button>
                   </div>
                   <div className="flex-1 p-0 overflow-hidden relative bg-slate-900">
-                      <textarea 
-                          className="w-full h-full bg-slate-900 text-slate-300 font-mono text-xs p-4 resize-none outline-none"
-                          readOnly
-                          value={APPS_SCRIPT_CODE}
-                      />
+                      <textarea className="w-full h-full bg-slate-900 text-slate-300 font-mono text-xs p-4 resize-none outline-none" readOnly value={APPS_SCRIPT_CODE} />
                   </div>
                   <div className="p-4 border-t border-slate-200 bg-white rounded-b-2xl flex flex-col md:flex-row justify-between items-center gap-4">
                       <div className="text-xs text-slate-500">
                           <p className="font-bold text-rose-600 flex items-center gap-1"><AlertTriangle size={12}/> IMPORTANTE:</p>
-                          1. Cole este código em <b>Extensões &gt; Apps Script</b>.<br/>
-                          2. Clique em <b>Implantar &gt; Nova Implantação</b>.
+                          Atualize o código para habilitar o comando de LIMPEZA REMOTA.
                       </div>
-                      <button 
-                          onClick={copyToClipboard}
-                          className="flex items-center gap-2 bg-indigo-600 text-white px-6 py-2 rounded-lg hover:bg-indigo-700 font-bold shadow-sm whitespace-nowrap"
-                      >
-                          <Copy size={16} />
-                          Copiar Código
+                      <button onClick={copyToClipboard} className="flex items-center gap-2 bg-indigo-600 text-white px-6 py-2 rounded-lg hover:bg-indigo-700 font-bold shadow-sm whitespace-nowrap">
+                          <Copy size={16} /> Copiar Versão {CURRENT_SCRIPT_VERSION}
                       </button>
                   </div>
               </div>
           </div>
       )}
 
-      <div className="flex justify-end mb-4">
-         <button 
-            onClick={() => window.location.reload()} 
-            className="flex items-center gap-2 text-slate-500 hover:text-slate-700 text-sm font-bold px-4 py-2 bg-slate-100 hover:bg-slate-200 rounded-lg transition-colors"
-         >
-            <Lock size={16} />
-            Bloquear Acesso
-         </button>
-      </div>
-
       <div className="bg-white p-8 rounded-2xl shadow-sm border border-slate-200 space-y-8">
-        
-        {/* SECTION 1: CLOUD CONNECTION */}
         <div>
             <div className="flex items-center justify-between mb-6">
                 <div className="flex items-center gap-3">
-                    <div className="bg-indigo-100 p-3 rounded-full text-indigo-700">
-                        <Database size={24} />
-                    </div>
+                    <div className="bg-indigo-100 p-3 rounded-full text-indigo-700"><Database size={24} /></div>
                     <div>
                         <h2 className="text-xl font-bold text-slate-800">Conexão com Nuvem</h2>
-                        <p className="text-slate-500 text-sm">Integração Google Planilhas</p>
+                        <p className="text-slate-500 text-sm">Versão atual: {CURRENT_SCRIPT_VERSION}</p>
                     </div>
                 </div>
-                {config.enabled && (
-                    <button onClick={handleDisconnect} className="text-rose-500 hover:bg-rose-50 p-2 rounded">
-                        <Trash2 size={20} />
-                    </button>
-                )}
+                {config.enabled && <button onClick={handleDisconnect} className="text-rose-500 p-2 hover:bg-rose-50 rounded"><Trash2 size={20} /></button>}
             </div>
 
             <div className="space-y-4">
-                <div className="bg-indigo-50 border border-indigo-100 rounded-lg p-4 mb-4">
-                    <div className="flex gap-3">
-                        <Code className="text-indigo-600 shrink-0" size={20} />
-                        <div>
-                            <div className="flex items-center gap-2 mb-1">
-                                <h4 className="text-sm font-bold text-indigo-900">Passo 1: Código do Servidor</h4>
-                                <span className="bg-indigo-200 text-indigo-800 text-[10px] px-1.5 py-0.5 rounded-full font-bold">v{CURRENT_SCRIPT_VERSION}</span>
-                            </div>
-                            <p className="text-xs text-indigo-700 mb-3">
-                                Corrigido para identificar datas no formato BR e ISO.
-                            </p>
-                            <button 
-                                onClick={() => setShowScriptCode(true)}
-                                className="text-xs bg-white border border-indigo-200 text-indigo-700 px-3 py-1.5 rounded font-bold hover:bg-indigo-50 transition-colors shadow-sm"
-                            >
-                                Ver Código do Script (Copiar)
-                            </button>
-                        </div>
-                    </div>
-                </div>
-
-                <div>
-                    <label className="block text-sm font-medium text-slate-700 mb-1">Passo 2: URL do App da Web</label>
-                    <div className="flex gap-2">
-                        <div className="relative flex-1">
-                            <Link className="absolute left-3 top-3.5 text-slate-400" size={16} />
-                            <input 
-                                type="text" 
-                                className="w-full border border-slate-300 rounded-lg pl-10 p-3 focus:ring-2 focus:ring-indigo-500 outline-none font-mono text-sm disabled:opacity-50 disabled:bg-slate-100"
-                                value={config.scriptUrl}
-                                onChange={e => setConfig({...config, scriptUrl: e.target.value})}
-                                placeholder="https://script.google.com/macros/s/..."
-                                disabled={isPushing || isPulling}
-                            />
-                        </div>
-                    </div>
+                <div className="bg-amber-50 border border-amber-100 rounded-lg p-4">
+                    <p className="text-xs text-amber-800 font-bold mb-2 flex items-center gap-1"><AlertTriangle size={14}/> Sincronização e Erros:</p>
+                    <p className="text-[11px] text-amber-700">Se o saldo do Douglas ou qualquer outro colaborador estiver errado, clique em <b>"Ver Código"</b>, atualize sua planilha e depois use o botão de reset no dashboard.</p>
                 </div>
                 
-                <div className="flex gap-3">
-                    <button 
-                        onClick={handleTestConnection}
-                        disabled={!config.scriptUrl || isTesting || isPushing || isPulling}
-                        className="flex-1 flex items-center justify-center gap-2 px-4 py-2 rounded-lg font-bold text-indigo-700 bg-indigo-50 border border-indigo-200 hover:bg-indigo-100 transition-all disabled:opacity-50 text-sm"
-                    >
-                        <Activity size={16} className={isTesting ? 'animate-spin' : ''} />
-                        {isTesting ? 'Testando...' : 'Testar Conexão'}
-                    </button>
-                </div>
+                <button onClick={() => setShowScriptCode(true)} className="w-full bg-indigo-50 text-indigo-700 py-3 rounded-xl border border-indigo-100 font-bold flex items-center justify-center gap-2">
+                    <Code size={18} /> Ver Código do Script (v{CURRENT_SCRIPT_VERSION})
+                </button>
 
-                {config.enabled && (
-                    <div className="pt-4 border-t border-slate-100 space-y-3">
-                        <p className="text-xs font-bold text-slate-500 uppercase">Sincronização Manual</p>
-                        
-                        <div className="grid grid-cols-2 gap-3">
-                            <button 
-                                onClick={handleForcePull}
-                                disabled={isPulling || isPushing}
-                                className="flex items-center justify-center gap-2 px-3 py-3 rounded-lg font-bold text-slate-700 bg-slate-100 hover:bg-slate-200 transition-all disabled:opacity-50 border border-slate-200 text-sm"
-                            >
-                                <DownloadCloud size={18} className={isPulling ? 'animate-bounce' : ''} />
-                                {isPulling ? 'Baixar do Google (Restaurar)' : 'Baixar do Google (Restaurar)'}
-                            </button>
-
-                            <button 
-                                onClick={handleForcePush}
-                                disabled={isPulling || isPushing}
-                                className="flex items-center justify-center gap-2 px-3 py-3 rounded-lg font-bold text-white bg-indigo-600 hover:bg-indigo-700 transition-all disabled:opacity-50 shadow-sm relative overflow-hidden text-sm"
-                            >
-                                <div className={`absolute left-0 top-0 bottom-0 bg-white/20 transition-all duration-300`} style={{ width: `${pushProgress}%` }}></div>
-                                <div className="relative flex items-center gap-2">
-                                    <UploadCloud size={18} className={isPushing ? 'animate-bounce' : ''} />
-                                    {isPushing ? `${pushProgress}%` : 'Enviar Correções para Nuvem'}
-                                </div>
-                            </button>
-                        </div>
-                        <p className="text-[10px] text-center text-slate-400 mt-2">
-                            <b>ATENÇÃO:</b> Se você corrigiu dados manualmente neste computador, clique em <b>Enviar Correções</b> para salvar na planilha.
-                        </p>
-                    </div>
-                )}
-            </div>
-        </div>
-
-        {/* SECTION 1.5: LOCAL DATA MANAGEMENT */}
-        <div className="pt-6 border-t border-slate-200">
-             <div className="flex items-center gap-3 mb-6">
-                <div className="bg-emerald-100 p-3 rounded-full text-emerald-700">
-                    <FileSpreadsheet size={24} />
-                </div>
-                <div>
-                    <h2 className="text-xl font-bold text-slate-800">Gestão de Dados Locais</h2>
-                    <p className="text-slate-500 text-sm">Backup e Importação</p>
-                </div>
-            </div>
-
-            <div className="bg-slate-50 p-4 rounded-xl border border-slate-200">
-                <div className="flex items-center justify-between">
-                    <div>
-                        <h4 className="font-bold text-slate-700 text-sm">Importar Backup (Excel)</h4>
-                        <p className="text-xs text-slate-500 max-w-sm">
-                            Copie dados de uma planilha externa e cole aqui para preencher dias faltantes.
-                        </p>
-                    </div>
-                    <button 
-                        onClick={() => setShowImportModal(true)}
-                        className="bg-white border border-emerald-200 text-emerald-700 hover:bg-emerald-50 px-4 py-2 rounded-lg text-sm font-bold transition-colors shadow-sm flex items-center gap-2"
-                    >
-                        <UploadCloud size={16} />
-                        Importar Dados
-                    </button>
+                <input type="text" className="w-full border border-slate-300 rounded-lg p-3 font-mono text-sm" value={config.scriptUrl} onChange={e => setConfig({...config, scriptUrl: e.target.value})} placeholder="https://script.google.com/macros/s/..." />
+                
+                <div className="grid grid-cols-2 gap-3">
+                    <button onClick={handleTestConnection} className="bg-slate-100 text-slate-700 py-2 rounded-lg font-bold text-sm border">Testar Conexão</button>
+                    <button onClick={handleForcePull} className="bg-indigo-600 text-white py-2 rounded-lg font-bold text-sm">Baixar Agora</button>
                 </div>
             </div>
         </div>
 
-        {/* SECTION 2: LOCATION SETTINGS */}
-        <div className="pt-6 border-t border-slate-200">
-             <div className="flex items-center gap-3 mb-6">
-                <div className="bg-amber-100 p-3 rounded-full text-amber-700">
-                    <MapPin size={24} />
-                </div>
-                <div>
-                    <h2 className="text-xl font-bold text-slate-800">Localização</h2>
-                    <p className="text-slate-500 text-sm">Configuração do ponto físico</p>
-                </div>
-            </div>
-
-            <div className="bg-slate-50 p-4 rounded-xl border border-slate-200">
-                <div className="flex items-center gap-3 mb-4">
-                    <input 
-                        type="checkbox"
-                        id="useFixed"
-                        checked={locConfig.useFixed}
-                        onChange={(e) => setLocConfig({...locConfig, useFixed: e.target.checked})}
-                        className="w-5 h-5 text-indigo-600 rounded focus:ring-indigo-500"
-                    />
-                    <label htmlFor="useFixed" className="font-bold text-slate-700 cursor-pointer select-none">
-                        Usar Localização Fixa (Recomendado para PC)
-                    </label>
-                </div>
-
-                {locConfig.useFixed && (
-                    <div className="animate-fade-in ml-8">
-                        <label className="block text-xs font-bold text-slate-500 mb-1 uppercase">Nome da Loja / Local</label>
-                        <div className="relative">
-                            <Building2 className="absolute left-3 top-3 text-slate-400" size={16} />
-                            <input 
-                                type="text"
-                                value={locConfig.fixedName}
-                                onChange={(e) => setLocConfig({...locConfig, fixedName: e.target.value})}
-                                placeholder="Ex: Nobel Petrópolis - Loja Principal"
-                                className="w-full border border-slate-300 rounded-lg pl-10 p-2 focus:ring-2 focus:ring-amber-500 outline-none"
-                            />
-                        </div>
-                        <p className="text-xs text-slate-400 mt-2">
-                            Isso substitui o GPS impreciso do computador. Todos os pontos registrados neste PC terão este local.
-                        </p>
-                    </div>
-                )}
-            </div>
-        </div>
-
-        {/* SAVE BUTTON */}
-        <div className="pt-4">
-            <button 
-                onClick={handleSave}
-                className={`
-                    w-full flex items-center justify-center gap-2 px-4 py-4 rounded-xl font-bold text-lg text-white transition-all shadow-lg
-                    ${status === 'saved' ? 'bg-emerald-500 scale-95' : 'bg-brand-600 hover:bg-brand-700 hover:scale-[1.01]'}
-                `}
-            >
-                {status === 'saved' ? <><CheckCircle size={24} /> Configurações Salvas!</> : <><Save size={24} /> Salvar Tudo</>}
+        <div className="pt-6 border-t">
+            <button onClick={handleSave} className="w-full bg-brand-600 text-white py-4 rounded-xl font-bold text-lg hover:bg-brand-700">
+                {status === 'saved' ? 'Configurações Salvas!' : 'Salvar Configurações'}
             </button>
         </div>
-
       </div>
     </div>
   );

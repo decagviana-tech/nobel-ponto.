@@ -9,7 +9,7 @@ import { EmployeeManager } from './components/EmployeeManager';
 import { Settings } from './components/Settings';
 import { getEmployees, getGoogleConfig, mergeExternalRecords, mergeExternalEmployees, getBankBalance } from './services/storageService';
 import { syncRowToSheet, readSheetData, readEmployeesFromSheet, syncEmployeeToSheet } from './services/googleSheetsService';
-import { Clock, FileSpreadsheet, LayoutDashboard, Bot, Menu, X, Users, ChevronDown, Settings as SettingsIcon, RefreshCw, Cloud, Building2 } from 'lucide-react';
+import { Clock, FileSpreadsheet, LayoutDashboard, Bot, Menu, X, Users, ChevronDown, Settings as SettingsIcon, RefreshCw, ShieldCheck, Building2, CheckCircle } from 'lucide-react';
 import { PinModal } from './components/PinModal';
 
 const App: React.FC = () => {
@@ -60,11 +60,9 @@ const App: React.FC = () => {
       setCurrentEmployeeId(loaded[0].id);
     }
 
-    // Inicial e Polling (Anti-divergência)
     performSync(true);
     const interval = setInterval(() => performSync(true), 30000);
     
-    // Sincroniza sempre que voltar para a aba
     const handleFocus = () => performSync(true);
     window.addEventListener('focus', handleFocus);
 
@@ -161,11 +159,11 @@ const App: React.FC = () => {
 
         {lastSyncTime && (
             <div className="mt-auto pt-4 border-t px-2">
-                <div className={`w-full flex items-center justify-center gap-2 p-2 rounded-lg text-[10px] font-bold ${isSyncing ? 'bg-slate-100' : 'bg-indigo-50 text-indigo-700'}`}>
-                    {isSyncing ? <RefreshCw size={14} className="animate-spin" /> : <Cloud size={14} />}
-                    {isSyncing ? 'SINCRONIZANDO...' : 'SINCRONIZADO'}
+                <div className={`w-full flex items-center justify-center gap-2 p-3 rounded-2xl text-[11px] font-black tracking-tighter uppercase transition-colors duration-500 ${isSyncing ? 'bg-slate-100 text-slate-400' : 'bg-emerald-500 text-white shadow-lg shadow-emerald-200'}`}>
+                    {isSyncing ? <RefreshCw size={16} className="animate-spin" /> : <ShieldCheck size={16} />}
+                    {isSyncing ? 'ATUALIZANDO...' : 'DADOS VERIFICADOS'}
                 </div>
-                <p className="text-[9px] text-center text-slate-400 mt-1">Última atualização: {lastSyncTime.toLocaleTimeString()}</p>
+                <p className="text-[9px] text-center text-slate-400 mt-2 font-bold">Última Auditoria: {lastSyncTime.toLocaleTimeString()}</p>
             </div>
         )}
       </div>

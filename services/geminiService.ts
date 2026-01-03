@@ -6,46 +6,53 @@ import { formatTime } from "../utils";
 export const analyzeTimesheet = async (records: DailyRecord[], balance: number, query: string): Promise<string | null> => {
     try {
         const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
-        const recentHistory = records.slice(-10).map(r => ({
+        const recentHistory = records.slice(-15).map(r => ({
             data: r.date,
             horas: formatTime(r.totalMinutes),
             saldo: formatTime(r.balanceMinutes),
-            status: (r.entry && !r.exit) ? "Incompleto" : "Ok"
+            status: (r.entry && !r.exit) ? "Incompleto - Pendência detectada!" : "OK"
         }));
 
-        const prompt = `Você é o "Nobel Auditor", um assistente de RH inteligente para a Nobel Petrópolis.
-        Contexto Atual:
-        - Saldo Total do Banco de Horas: ${formatTime(balance)}
-        - Histórico Recente: ${JSON.stringify(recentHistory)}
+        const prompt = `Você é o "Nobel Auditor", um assistente de RH inteligente de elite para a Nobel Petrópolis.
+        Sua missão é ajudar os colaboradores a gerirem seus tempos de forma eficiente e amigável.
+        
+        Dados Atuais do Colaborador:
+        - Saldo de Banco de Horas Consolidado: ${formatTime(balance)}
+        - Histórico de Batidas Recentes: ${JSON.stringify(recentHistory)}
         
         Pergunta do Funcionário: "${query}"
         
-        Instruções:
-        1. Responda de forma profissional, acolhedora e concisa.
-        2. Se houver saldo negativo, sugira formas amigáveis de compensar.
-        3. Se houver batidas incompletas, alerte o usuário.
-        4. Responda sempre em Português Brasileiro.`;
+        Instruções de Resposta:
+        1. Tom: Profissional, acolhedor, motivador e extremamente claro.
+        2. Analise padrões: Se houver muitas pendências, alerte sobre a importância de fechar o ponto.
+        3. Saldo: Se positivo, parabenize. Se negativo, sugira formas de compensação leve.
+        4. Curto e Direto: Evite textos longos desnecessários.
+        5. Idioma: Português Brasileiro.`;
 
         const response = await ai.models.generateContent({
             model: 'gemini-3-pro-preview',
             contents: prompt,
             config: {
-                thinkingConfig: { thinkingBudget: 2000 }
+                thinkingConfig: { thinkingBudget: 2500 }
             }
         });
-        return response.text || "Desculpe, não consegui analisar seus dados no momento.";
+        return response.text || "Estou com dificuldades para analisar seus dados agora. Tente novamente em instantes.";
     } catch (error) {
-        console.error("Erro Gemini:", error);
-        return "Erro na comunicação com a inteligência artificial.";
+        console.error("Erro Nobel Auditor:", error);
+        return "Erro na comunicação com a central de inteligência Nobel.";
     }
 };
 
 export const getQuickInsight = async (records: DailyRecord[], balance: number): Promise<string | null> => {
     try {
         const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
-        const prompt = `Analise este saldo de banco de horas: ${formatTime(balance)}. 
-        Dê uma única frase motivacional ou de alerta curta para o funcionário ver no dashboard.
-        Seja humano e direto.`;
+        const pattern = records.slice(-5).map(r => r.totalMinutes);
+        const avg = pattern.length > 0 ? pattern.reduce((a,b) => a+b, 0) / pattern.length : 0;
+
+        const prompt = `Gere uma única frase curta e impactante para um dashboard de ponto eletrônico.
+        Contexto: O funcionário tem ${formatTime(balance)} de saldo total. 
+        Média recente: ${formatTime(avg)}/dia.
+        Seja humano, motivador e direto. Max 100 caracteres.`;
 
         const response = await ai.models.generateContent({
             model: 'gemini-3-flash-preview',
