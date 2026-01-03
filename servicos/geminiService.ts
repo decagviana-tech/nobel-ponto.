@@ -6,53 +6,22 @@ import { formatTime } from "../utils";
 export const analyzeTimesheet = async (records: DailyRecord[], balance: number, query: string): Promise<string | null> => {
     try {
         const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
-        const recentHistory = records.slice(-10).map(r => ({
+        const auditLog = records.slice(0, 10).map(r => ({
             data: r.date,
-            horas: formatTime(r.totalMinutes),
-            saldo: formatTime(r.balanceMinutes),
-            status: (r.entry && !r.exit) ? "Incompleto" : "Ok"
+            status: (r.entry && !r.exit) ? "INCOMPLETO" : "OK",
+            total: formatTime(r.totalMinutes)
         }));
 
-        const prompt = `Você é o "Nobel Auditor", um assistente de RH inteligente para a Nobel Petrópolis.
-        Contexto Atual:
-        - Saldo Total do Banco de Horas: ${formatTime(balance)}
-        - Histórico Recente: ${JSON.stringify(recentHistory)}
-        
-        Pergunta do Funcionário: "${query}"
-        
-        Instruções:
-        1. Responda de forma profissional, acolhedora e concisa.
-        2. Se houver saldo negativo, sugira formas amigáveis de compensar.
-        3. Se houver batidas incompletas, alerte o usuário.
-        4. Responda sempre em Português Brasileiro.`;
-
-        const response = await ai.models.generateContent({
-            model: 'gemini-3-pro-preview',
-            contents: prompt,
-            config: {
-                thinkingConfig: { thinkingBudget: 2000 }
-            }
-        });
-        return response.text || "Desculpe, não consegui analisar seus dados no momento.";
-    } catch (error) {
-        console.error("Erro Gemini:", error);
-        return "Erro na comunicação com a inteligência artificial.";
-    }
-};
-
-export const getQuickInsight = async (records: DailyRecord[], balance: number): Promise<string | null> => {
-    try {
-        const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
-        const prompt = `Analise este saldo de banco de horas: ${formatTime(balance)}. 
-        Dê uma única frase motivacional ou de alerta curta para o funcionário ver no dashboard.
-        Seja humano e direto.`;
+        const prompt = `Você é o "Nobel Auditor". Analise o saldo de ${formatTime(balance)} e o histórico: ${JSON.stringify(auditLog)}. Pergunta: "${query}". Seja conciso e profissional em Português.`;
 
         const response = await ai.models.generateContent({
             model: 'gemini-3-flash-preview',
             contents: prompt,
         });
-        return response.text || null;
-    } catch { return null; }
+        return response.text || "Sem resposta.";
+    } catch (error) {
+        return "Erro na análise.";
+    }
 };
 
 export const generateSpeech = async (text: string): Promise<Uint8Array | null> => {
@@ -60,7 +29,7 @@ export const generateSpeech = async (text: string): Promise<Uint8Array | null> =
         const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
         const response = await ai.models.generateContent({
             model: "gemini-2.5-flash-preview-tts",
-            contents: [{ parts: [{ text: text.replace(/[*#]/g, '') }] }],
+            contents: [{ parts: [{ text: `Leia: ${text.replace(/[*#]/g, '')}` }] }],
             config: {
                 responseModalities: [Modality.AUDIO],
                 speechConfig: {
