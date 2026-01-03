@@ -127,7 +127,7 @@ export const EmployeeManager: React.FC<Props> = ({ onUpdate, currentEmployeeId, 
                             <label className="block text-xs font-semibold text-slate-500 mb-1">Nome Completo</label>
                             <input 
                                 type="text" 
-                                className="w-full border border-slate-300 p-2 rounded-lg focus:ring-2 focus:ring-brand-500 outline-none"
+                                className="w-full bg-white border border-slate-300 p-2 rounded-lg focus:ring-2 focus:ring-brand-500 outline-none text-slate-900"
                                 value={newEmployee.name}
                                 onChange={e => setNewEmployee({...newEmployee, name: e.target.value})}
                                 placeholder="Ex: João Silva"
@@ -137,7 +137,7 @@ export const EmployeeManager: React.FC<Props> = ({ onUpdate, currentEmployeeId, 
                             <label className="block text-xs font-semibold text-slate-500 mb-1">Cargo / Função</label>
                             <input 
                                 type="text" 
-                                className="w-full border border-slate-300 p-2 rounded-lg focus:ring-2 focus:ring-brand-500 outline-none"
+                                className="w-full bg-white border border-slate-300 p-2 rounded-lg focus:ring-2 focus:ring-brand-500 outline-none text-slate-900"
                                 value={newEmployee.role}
                                 onChange={e => setNewEmployee({...newEmployee, role: e.target.value})}
                                 placeholder="Ex: Vendedor"
@@ -146,7 +146,7 @@ export const EmployeeManager: React.FC<Props> = ({ onUpdate, currentEmployeeId, 
                         <div>
                             <label className="block text-xs font-semibold text-slate-500 mb-1">Dia Curto (Semana Inglesa)</label>
                             <select 
-                                className="w-full border border-slate-300 p-2 rounded-lg focus:ring-2 focus:ring-brand-500 outline-none"
+                                className="w-full bg-white border border-slate-300 p-2 rounded-lg focus:ring-2 focus:ring-brand-500 outline-none text-slate-900"
                                 value={newEmployee.shortDayOfWeek}
                                 onChange={e => setNewEmployee({...newEmployee, shortDayOfWeek: Number(e.target.value)})}
                             >
@@ -159,7 +159,7 @@ export const EmployeeManager: React.FC<Props> = ({ onUpdate, currentEmployeeId, 
                             <label className="block text-xs font-semibold text-slate-500 mb-1">PIN (Opcional)</label>
                             <input 
                                 type="text" 
-                                className="w-full border border-slate-300 p-2 rounded-lg focus:ring-2 focus:ring-brand-500 outline-none"
+                                className="w-full bg-white border border-slate-300 p-2 rounded-lg focus:ring-2 focus:ring-brand-500 outline-none text-slate-900"
                                 value={newEmployee.pin}
                                 onChange={e => setNewEmployee({...newEmployee, pin: e.target.value})}
                                 placeholder="Ex: 1234"
@@ -210,7 +210,7 @@ export const EmployeeManager: React.FC<Props> = ({ onUpdate, currentEmployeeId, 
                                     <td className="px-6 py-4 font-medium text-slate-900">
                                         {isEditing && editForm ? (
                                             <input 
-                                                className="border p-1.5 rounded w-full bg-white"
+                                                className="border p-1.5 rounded w-full bg-white text-slate-900 font-bold"
                                                 value={editForm.name}
                                                 onChange={e => setEditForm({...editForm, name: e.target.value})}
                                             />
@@ -225,13 +225,13 @@ export const EmployeeManager: React.FC<Props> = ({ onUpdate, currentEmployeeId, 
                                         {isEditing && editForm ? (
                                             <div className="space-y-2">
                                                 <input 
-                                                    className="border p-1.5 rounded w-full bg-white text-xs"
+                                                    className="border p-1.5 rounded w-full bg-white text-slate-900 text-xs font-bold"
                                                     value={editForm.role}
                                                     placeholder="Cargo"
                                                     onChange={e => setEditForm({...editForm, role: e.target.value})}
                                                 />
                                                 <select 
-                                                    className="border p-1.5 rounded w-full bg-white text-xs"
+                                                    className="border p-1.5 rounded w-full bg-white text-slate-900 text-xs font-bold"
                                                     value={editForm.shortDayOfWeek}
                                                     onChange={e => setEditForm({...editForm, shortDayOfWeek: Number(e.target.value)})}
                                                 >

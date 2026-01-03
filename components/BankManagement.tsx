@@ -99,7 +99,7 @@ export const BankManagement: React.FC<Props> = ({ employeeId, onUpdate, onClose 
                             <div>
                                 <label className="block text-xs font-semibold text-slate-500 mb-1">Tipo de Lançamento</label>
                                 <select 
-                                    className="w-full p-2 border border-slate-300 rounded-lg outline-none focus:ring-2 focus:ring-brand-500"
+                                    className="w-full p-2 bg-white border border-slate-300 rounded-lg outline-none focus:ring-2 focus:ring-brand-500 text-slate-900 font-bold"
                                     value={type}
                                     onChange={(e) => setType(e.target.value as TransactionType)}
                                 >
@@ -114,7 +114,7 @@ export const BankManagement: React.FC<Props> = ({ employeeId, onUpdate, onClose 
                                 <label className="block text-xs font-semibold text-slate-500 mb-1">Data de Referência</label>
                                 <input 
                                     type="date" 
-                                    className="w-full p-2 border border-slate-300 rounded-lg outline-none focus:ring-2 focus:ring-brand-500"
+                                    className="w-full p-2 bg-white border border-slate-300 rounded-lg outline-none focus:ring-2 focus:ring-brand-500 text-slate-900 font-bold"
                                     value={date}
                                     onChange={(e) => setDate(e.target.value)}
                                 />
@@ -150,7 +150,7 @@ export const BankManagement: React.FC<Props> = ({ employeeId, onUpdate, onClose 
                                     <input 
                                         type="number" 
                                         placeholder="00"
-                                        className="w-full p-2 border border-slate-300 rounded-lg text-center"
+                                        className="w-full p-2 bg-white border border-slate-300 rounded-lg text-center text-slate-900 font-bold"
                                         value={hours}
                                         onChange={(e) => setHours(e.target.value)}
                                     />
@@ -158,7 +158,7 @@ export const BankManagement: React.FC<Props> = ({ employeeId, onUpdate, onClose 
                                     <input 
                                         type="number" 
                                         placeholder="00"
-                                        className="w-full p-2 border border-slate-300 rounded-lg text-center"
+                                        className="w-full p-2 bg-white border border-slate-300 rounded-lg text-center text-slate-900 font-bold"
                                         value={minutes}
                                         onChange={(e) => setMinutes(e.target.value)}
                                     />
@@ -171,7 +171,7 @@ export const BankManagement: React.FC<Props> = ({ employeeId, onUpdate, onClose 
                             <label className="block text-xs font-semibold text-slate-500 mb-1">Motivo / Descrição</label>
                             <input 
                                 type="text" 
-                                className="w-full p-2 border border-slate-300 rounded-lg outline-none focus:ring-2 focus:ring-brand-500"
+                                className="w-full p-2 bg-white border border-slate-300 rounded-lg outline-none focus:ring-2 focus:ring-brand-500 text-slate-900 font-bold"
                                 placeholder="Ex: Pagamento referente a Março; Atestado dia 12..."
                                 value={description}
                                 onChange={(e) => setDescription(e.target.value)}

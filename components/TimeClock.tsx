@@ -62,7 +62,6 @@ export const TimeClock: React.FC<Props> = ({ onUpdate, employeeId }) => {
     setIsPunching(type);
     const now = getCurrentTime();
     
-    // Aesthetic processing delay
     await new Promise(resolve => setTimeout(resolve, 1000));
     
     const newRecord: DailyRecord = { ...todayRecord, [type]: now, location: locationName, employeeId };
@@ -76,7 +75,6 @@ export const TimeClock: React.FC<Props> = ({ onUpdate, employeeId }) => {
     setSuccessMsg(msg);
     setIsPunching(null);
 
-    // AI Voice feedback
     const audioData = await generateSpeech(msg);
     if (audioData) playAudioBuffer(audioData);
 
@@ -98,7 +96,7 @@ export const TimeClock: React.FC<Props> = ({ onUpdate, employeeId }) => {
         onClick={() => handlePunch(type)}
         disabled={isDone || isPunching !== null}
         className={`
-          relative flex flex-col items-center justify-center p-10 rounded-[2.5rem] transition-all duration-500 shadow-xl border-2
+          relative flex flex-col items-center justify-center p-6 md:p-10 rounded-[2.5rem] transition-all duration-500 shadow-xl border-2
           ${isDone 
             ? 'bg-slate-50 border-slate-100 text-slate-300 scale-95 opacity-80' 
             : isRecommended
@@ -112,8 +110,8 @@ export const TimeClock: React.FC<Props> = ({ onUpdate, employeeId }) => {
                 <Zap size={20} fill="white" />
             </div>
         )}
-        {isLoading ? <Loader2 size={48} className="animate-spin mb-4" /> : <Icon size={48} className="mb-4" />}
-        <span className="text-xl tracking-tight uppercase font-black">{isDone ? todayRecord[type as keyof DailyRecord] : label}</span>
+        {isLoading ? <Loader2 size={32} className="animate-spin mb-4" /> : <Icon size={32} className="mb-4" />}
+        <span className="text-lg tracking-tight uppercase font-black">{isDone ? todayRecord[type as keyof DailyRecord] : label}</span>
         {isDone && <span className="mt-2 text-[10px] font-black tracking-widest opacity-60 uppercase">Registrado</span>}
       </button>
     );
@@ -128,30 +126,32 @@ export const TimeClock: React.FC<Props> = ({ onUpdate, employeeId }) => {
           </div>
       )}
 
-      <div className="text-center mb-16 w-full">
-        <div className="mb-6 inline-flex items-center gap-3 bg-white px-5 py-2.5 rounded-full border shadow-sm text-slate-400 font-black text-[10px] uppercase tracking-[0.2em] transition-all">
+      <div className="text-center mb-8 md:mb-12 w-full">
+        <div className="mb-4 inline-flex items-center gap-3 bg-white px-5 py-2.5 rounded-full border shadow-sm text-slate-400 font-black text-[10px] uppercase tracking-[0.2em] transition-all">
             {isLocating ? <RefreshCw size={14} className="animate-spin text-brand-500" /> : <ShieldCheck size={14} className="text-emerald-500" />}
             {locationName}
         </div>
         
-        <div className="relative inline-block">
-            <h2 className="text-[12rem] leading-none font-black text-slate-900 font-mono tracking-tighter drop-shadow-2xl select-none transition-all duration-300">
+        <div className="relative inline-block px-10">
+            <h2 className="text-6xl md:text-8xl lg:text-9xl leading-none font-black text-slate-900 font-mono tracking-tighter drop-shadow-xl select-none transition-all duration-300">
                 {currentTime}
             </h2>
-            <div className="absolute -bottom-4 left-0 right-0 h-1.5 bg-brand-100 rounded-full overflow-hidden">
+            <div className="mt-4 h-1.5 bg-brand-100 rounded-full overflow-hidden">
                 <div className="h-full bg-brand-500 animate-progress w-full"></div>
             </div>
         </div>
         
-        <div className={`mt-10 inline-flex items-center gap-3 px-8 py-3 rounded-[2rem] text-sm font-black border-2 transition-all shadow-sm
-            ${totalBankBalance >= 0 ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : 'bg-rose-50 text-rose-700 border-rose-200'}
-        `}>
-            <Wallet size={20} />
-            BANCO DE HORAS: {formatTime(totalBankBalance)}
+        <div className="block mt-8">
+            <div className={`inline-flex items-center gap-3 px-8 py-3 rounded-[2rem] text-sm font-black border-2 transition-all shadow-sm
+                ${totalBankBalance >= 0 ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : 'bg-rose-50 text-rose-700 border-rose-200'}
+            `}>
+                <Wallet size={20} />
+                BANCO DE HORAS: {formatTime(totalBankBalance)}
+            </div>
         </div>
       </div>
 
-      <div className="grid grid-cols-2 md:grid-cols-3 gap-8 w-full">
+      <div className="grid grid-cols-2 md:grid-cols-3 gap-6 md:gap-8 w-full">
         <ActionButton type="entry" label="Entrada" icon={LogIn} colorClass="bg-gradient-to-br from-emerald-400 to-emerald-600" />
         <ActionButton type="lunchStart" label="Almoço (Ida)" icon={Utensils} colorClass="bg-gradient-to-br from-amber-400 to-amber-600" />
         <ActionButton type="lunchEnd" label="Almoço (Volta)" icon={Utensils} colorClass="bg-gradient-to-br from-amber-400 to-amber-600" />
@@ -160,7 +160,7 @@ export const TimeClock: React.FC<Props> = ({ onUpdate, employeeId }) => {
         <ActionButton type="exit" label="Saída" icon={LogOut} colorClass="bg-gradient-to-br from-rose-400 to-rose-600" />
       </div>
 
-      <div className="mt-20 text-slate-300 text-[10px] font-black uppercase tracking-[0.3em] flex items-center gap-3">
+      <div className="mt-12 md:mt-20 text-slate-300 text-[10px] font-black uppercase tracking-[0.3em] flex items-center gap-3">
           <Building2 size={16} /> Nobel Petrópolis • Sistema Inteligente de Ponto
       </div>
       
