@@ -77,8 +77,8 @@ export const getTargetMinutesForDate = (dateIso: string, shortDayOfWeek: number 
         const dayOfWeek = getDay(date);
         
         if (dayOfWeek === 0) return 0; // Domingo
-        if (dayOfWeek === shortDayOfWeek) return 240; // Sábado (4h)
-        return 480; // Dia padrão (8h)
+        if (dayOfWeek === shortDayOfWeek) return 240; // Dia padrão curto (4h)
+        return 480; // Dia padrão cheio (8h)
     } catch {
         return 480;
     }
@@ -96,40 +96,32 @@ export const calculateDailyStats = (record: DailyRecord, shortDayOfWeek: number 
 
   let worked = 0;
 
-  // Cálculo rigoroso de segmentos
   if (t.ent !== null) {
-      if (t.lI !== null && t.lI > t.ent) {
-          worked += (t.lI - t.ent);
-      } else if (t.sai !== null && t.sai > t.ent && t.lI === null) {
-          worked += (t.sai - t.ent);
+      // O ponto final é a Saída, ou o último intervalo registrado caso ainda esteja trabalhando
+      const endPoint = t.sai ?? t.sF ?? t.sI ?? t.lF ?? t.lI;
+      
+      if (endPoint !== null && endPoint > t.ent) {
+          // Tempo total decorrido desde a entrada
+          worked = (endPoint - t.ent);
+          
+          // Subtrai o tempo de almoço (apenas se tiver início e fim)
+          if (t.lI !== null && t.lF !== null && t.lF > t.lI) {
+              worked -= (t.lF - t.lI);
+          }
+          
+          // Subtrai o tempo de lanche (apenas se tiver início e fim)
+          if (t.sI !== null && t.sF !== null && t.sF > t.sI) {
+              worked -= (t.sF - t.sI);
+          }
       }
-  }
-
-  if (t.lF !== null) {
-      if (t.sI !== null && t.sI > t.lF) {
-          worked += (t.sI - t.lF);
-      } else if (t.sai !== null && t.sai > t.lF && t.sI === null) {
-          worked += (t.sai - t.lF);
-      }
-  }
-
-  if (t.sF !== null && t.sai !== null && t.sai > t.sF) {
-      worked += (t.sai - t.sF);
   }
 
   const target = getTargetMinutesForDate(record.date, shortDayOfWeek);
-  
-  // SEGURANÇA MÁXIMA: Se o dia não tem SAÍDA registrada, o saldo é ZERO ou negativo.
-  // Nunca gera saldo POSITIVO (horas extras) sem o registro de saída.
   const isComplete = t.ent !== null && t.sai !== null;
-  const balance = (worked > 0 && isComplete) ? (worked - target) : 0;
+  // Se não saiu ainda, o saldo é baseado no que trabalhou até agora menos a meta do dia
+  const balance = isComplete ? (worked - target) : (worked > 0 ? (worked - target) : -target);
   
-  // Se trabalhou mas não bateu saída, assume saldo 0 para não explodir o banco de horas
-  return { 
-      total: worked, 
-      target: target,
-      balance: isComplete ? balance : (worked > 0 ? 0 : -target)
-  };
+  return { total: worked, target: target, balance: balance };
 };
 
 export const getTodayString = () => format(new Date(), 'yyyy-MM-dd');

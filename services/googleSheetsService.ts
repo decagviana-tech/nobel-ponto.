@@ -1,5 +1,5 @@
 
-import { DailyRecord, Employee } from '../types';
+import { DailyRecord, Employee, BankTransaction } from '../types';
 import { minutesToHHMM, normalizeTimeFromSheet } from '../utils';
 
 export const readEmployeesFromSheet = async (scriptUrl: string): Promise<Employee[] | null> => {
@@ -44,6 +44,24 @@ export const readSheetData = async (scriptUrl: string): Promise<DailyRecord[] | 
   }
 };
 
+export const readTransactionsFromSheet = async (scriptUrl: string): Promise<BankTransaction[] | null> => {
+    if (!scriptUrl) return null;
+    try {
+        const response = await fetch(`${scriptUrl}?action=getTransactions`);
+        if (!response.ok) return null;
+        const data = await response.json();
+        if (!Array.isArray(data)) return null;
+        return data.map((t: any) => ({
+            ...t,
+            id: String(t.id),
+            employeeId: String(t.employeeId)
+        }));
+    } catch (e) {
+        console.error("Erro ao ler transações:", e);
+        return null;
+    }
+};
+
 export const clearCloudRecords = async (scriptUrl: string, employeeId: string) => {
     if (!scriptUrl) return;
     try {
@@ -67,6 +85,8 @@ export const clearCloudRecords = async (scriptUrl: string, employeeId: string) =
 export const syncRowToSheet = async (scriptUrl: string, record: DailyRecord, employeeName: string, currentTotalBalance: number) => {
   if (!scriptUrl) return;
   try {
+    // IMPORTANTE: Enviamos os valores formatados como STRING para o Sheets.
+    // Isso evita que o Sheets tente fazer cálculos errados em cima das células.
     const totalFormatted = minutesToHHMM(record.totalMinutes);
     const balanceFormatted = minutesToHHMM(record.balanceMinutes);
 
@@ -83,7 +103,8 @@ export const syncRowToSheet = async (scriptUrl: string, record: DailyRecord, emp
                 ...record, 
                 employeeId: String(record.employeeId), 
                 employeeName,
-                currentTotalBalance,
+                // Enviamos o saldo total da conta do funcionário também para referência
+                currentTotalBalance: minutesToHHMM(currentTotalBalance),
                 totalFormatted,
                 balanceFormatted
             }
@@ -92,6 +113,40 @@ export const syncRowToSheet = async (scriptUrl: string, record: DailyRecord, emp
   } catch (error) {
     console.error("Error pushing row to script", error);
   }
+};
+
+export const syncTransactionToSheet = async (scriptUrl: string, transaction: BankTransaction) => {
+    if (!scriptUrl) return;
+    try {
+        await fetch(scriptUrl, {
+            method: 'POST',
+            mode: 'no-cors',
+            keepalive: true,
+            body: JSON.stringify({
+                action: 'syncTransaction',
+                data: { ...transaction, id: String(transaction.id), employeeId: String(transaction.employeeId) }
+            })
+        });
+    } catch (e) {
+        console.error("Erro ao sincronizar transação:", e);
+    }
+};
+
+export const deleteTransactionFromSheet = async (scriptUrl: string, id: string) => {
+    if (!scriptUrl) return;
+    try {
+        await fetch(scriptUrl, {
+            method: 'POST',
+            mode: 'no-cors',
+            keepalive: true,
+            body: JSON.stringify({
+                action: 'deleteTransaction',
+                data: { id: String(id) }
+            })
+        });
+    } catch (e) {
+        console.error("Erro ao deletar transação na nuvem:", e);
+    }
 };
 
 export const syncEmployeeToSheet = async (scriptUrl: string, employee: Employee) => {

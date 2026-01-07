@@ -1,9 +1,10 @@
 
 import React, { useState, useEffect } from 'react';
 import { BankTransaction, TransactionType } from '../types';
-import { addTransaction, getTransactions, deleteTransaction } from '../services/storageService';
+import { addTransaction, getTransactions, deleteTransaction, getGoogleConfig } from '../services/storageService';
+import { syncTransactionToSheet, deleteTransactionFromSheet } from '../services/googleSheetsService';
 import { formatTime } from '../utils';
-import { PlusCircle, Trash2, Calendar, FileText, DollarSign, Clock, AlertTriangle, X } from 'lucide-react';
+import { PlusCircle, Trash2, Calendar, FileText, DollarSign, Clock, AlertTriangle, X, RefreshCw } from 'lucide-react';
 
 interface Props {
     employeeId: string;
@@ -13,13 +14,14 @@ interface Props {
 
 export const BankManagement: React.FC<Props> = ({ employeeId, onUpdate, onClose }) => {
     const [transactions, setTransactions] = useState<BankTransaction[]>([]);
+    const [isSyncing, setIsSyncing] = useState(false);
     
     // Form
     const [type, setType] = useState<TransactionType>('ADJUSTMENT');
     const [date, setDate] = useState(new Date().toISOString().split('T')[0]);
     const [hours, setHours] = useState('');
     const [minutes, setMinutes] = useState('');
-    const [operation, setOperation] = useState<'CREDIT' | 'DEBIT'>('CREDIT'); // Credit adds to bank, Debit removes
+    const [operation, setOperation] = useState<'CREDIT' | 'DEBIT'>('CREDIT');
     const [description, setDescription] = useState('');
 
     useEffect(() => {
@@ -30,22 +32,26 @@ export const BankManagement: React.FC<Props> = ({ employeeId, onUpdate, onClose 
         setTransactions(getTransactions(employeeId));
     };
 
-    const handleSave = () => {
+    const handleSave = async () => {
         if (!hours && !minutes) return;
         if (!description) {
             alert("Por favor, adicione uma descrição.");
             return;
         }
 
+        setIsSyncing(true);
         const h = parseInt(hours || '0');
         const m = parseInt(minutes || '0');
         const totalMinutes = (h * 60) + m;
 
-        if (totalMinutes === 0) return;
+        if (totalMinutes === 0) {
+            setIsSyncing(false);
+            return;
+        }
 
         const finalAmount = operation === 'CREDIT' ? totalMinutes : -totalMinutes;
 
-        addTransaction({
+        const newTx = addTransaction({
             employeeId,
             date,
             type,
@@ -53,23 +59,36 @@ export const BankManagement: React.FC<Props> = ({ employeeId, onUpdate, onClose 
             description
         });
 
-        // Reset form
+        // SINCRONIZAÇÃO COM NUVEM
+        const config = getGoogleConfig();
+        if (config.enabled && config.scriptUrl) {
+            await syncTransactionToSheet(config.scriptUrl, newTx);
+        }
+
         setHours('');
         setMinutes('');
         setDescription('');
+        setIsSyncing(false);
         loadData();
         onUpdate();
     };
 
-    const handleDelete = (id: string) => {
+    const handleDelete = async (id: string) => {
         if (confirm('Tem certeza que deseja excluir este lançamento?')) {
+            setIsSyncing(true);
             deleteTransaction(id);
+            
+            const config = getGoogleConfig();
+            if (config.enabled && config.scriptUrl) {
+                await deleteTransactionFromSheet(config.scriptUrl, id);
+            }
+            
+            setIsSyncing(false);
             loadData();
             onUpdate();
         }
     };
 
-    // Auto-configure operation based on type
     useEffect(() => {
         if (type === 'PAYMENT') setOperation('DEBIT');
         if (type === 'CERTIFICATE') setOperation('CREDIT');
@@ -84,16 +103,17 @@ export const BankManagement: React.FC<Props> = ({ employeeId, onUpdate, onClose 
                         <DollarSign className="text-brand-600" />
                         Gerenciar Banco de Horas
                     </h3>
-                    <button onClick={onClose} className="p-2 hover:bg-slate-200 rounded-full transition-colors">
-                        <X size={24} className="text-slate-500" />
-                    </button>
+                    <div className="flex items-center gap-4">
+                        {isSyncing && <RefreshCw size={16} className="animate-spin text-brand-500" />}
+                        <button onClick={onClose} className="p-2 hover:bg-slate-200 rounded-full transition-colors">
+                            <X size={24} className="text-slate-500" />
+                        </button>
+                    </div>
                 </div>
 
                 <div className="p-6 overflow-y-auto">
-                    
-                    {/* Form Section */}
                     <div className="bg-slate-50 p-4 rounded-xl border border-slate-200 mb-6">
-                        <h4 className="text-sm font-bold text-slate-500 uppercase mb-4">Novo Lançamento</h4>
+                        <h4 className="text-sm font-bold text-slate-500 uppercase mb-4">Novo Lançamento Global</h4>
                         
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
                             <div>
@@ -180,17 +200,17 @@ export const BankManagement: React.FC<Props> = ({ employeeId, onUpdate, onClose 
 
                         <button 
                             onClick={handleSave}
-                            className={`w-full py-3 rounded-xl font-bold text-white shadow-sm transition-transform active:scale-95
+                            disabled={isSyncing}
+                            className={`w-full py-3 rounded-xl font-bold text-white shadow-sm transition-transform active:scale-95 disabled:opacity-50
                                 ${operation === 'CREDIT' ? 'bg-emerald-500 hover:bg-emerald-600' : 'bg-rose-500 hover:bg-rose-600'}
                             `}
                         >
-                            Confirmar Lançamento
+                            {isSyncing ? 'Sincronizando...' : 'Confirmar Lançamento na Nuvem'}
                         </button>
                     </div>
 
-                    {/* History List */}
                     <h4 className="text-sm font-bold text-slate-700 mb-3 flex items-center gap-2">
-                        <Clock size={16} /> Histórico de Lançamentos
+                        <Clock size={16} /> Histórico Sincronizado
                     </h4>
                     
                     {transactions.length === 0 ? (
@@ -203,7 +223,7 @@ export const BankManagement: React.FC<Props> = ({ employeeId, onUpdate, onClose 
                             {transactions.map(t => (
                                 <div key={t.id} className="flex items-center justify-between p-4 bg-white border border-slate-100 rounded-xl shadow-sm hover:shadow-md transition-shadow">
                                     <div className="flex items-start gap-3">
-                                        <div className={`p-2 rounded-full mt-1 ${t.amountMinutes >= 0 ? 'bg-emerald-50 text-emerald-600' : 'bg-rose-50 text-rose-600'}`}>
+                                        <div className={`p-2 rounded-full mt-1 ${t.amountMinutes >= 0 ? 'bg-emerald-50 text-emerald-600' : 'bg-rose-50 text-rose-700'}`}>
                                             {t.type === 'PAYMENT' ? <DollarSign size={16} /> : 
                                              t.type === 'CERTIFICATE' ? <FileText size={16} /> : <AlertTriangle size={16} />}
                                         </div>
@@ -220,12 +240,13 @@ export const BankManagement: React.FC<Props> = ({ employeeId, onUpdate, onClose 
                                         </div>
                                     </div>
                                     <div className="flex items-center gap-4">
-                                        <span className={`font-mono font-bold ${t.amountMinutes >= 0 ? 'text-emerald-600' : 'text-rose-600'}`}>
+                                        <span className={`font-mono font-bold ${t.amountMinutes >= 0 ? 'text-emerald-600' : 'text-rose-700'}`}>
                                             {t.amountMinutes > 0 ? '+' : ''}{formatTime(t.amountMinutes)}
                                         </span>
                                         <button 
                                             onClick={() => handleDelete(t.id)}
-                                            className="text-slate-300 hover:text-rose-500 transition-colors p-1"
+                                            disabled={isSyncing}
+                                            className="text-slate-300 hover:text-rose-500 transition-colors p-1 disabled:opacity-20"
                                             title="Excluir Lançamento"
                                         >
                                             <Trash2 size={16} />
