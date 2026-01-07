@@ -1,10 +1,10 @@
 
 import React, { useState, useEffect, useMemo } from 'react';
-import { DailyRecord, TimeRecordType } from '../types';
-import { getCurrentTime, getTodayString, formatTime } from '../utils';
-import { updateRecord, getTodayRecord, getBankBalance, getLocationConfig } from '../services/storageService';
+import { DailyRecord, TimeRecordType, Employee } from '../types';
+import { getCurrentTime, getTodayString, formatTime, getTargetMinutesForDate } from '../utils';
+import { updateRecord, getTodayRecord, getBankBalance, getLocationConfig, getEmployees } from '../services/storageService';
 import { generateSpeech, playAudioBuffer } from '../services/geminiService';
-import { Coffee, Utensils, LogOut, LogIn, MapPin, Wallet, Loader2, CheckCircle2, Building2, RefreshCw, Zap, ShieldCheck } from 'lucide-react';
+import { Coffee, Utensils, LogOut, LogIn, MapPin, Wallet, Loader2, CheckCircle2, Building2, RefreshCw, Zap, ShieldCheck, Info } from 'lucide-react';
 
 interface Props {
   onUpdate: (record: DailyRecord) => void;
@@ -19,6 +19,7 @@ export const TimeClock: React.FC<Props> = ({ onUpdate, employeeId }) => {
   const [isPunching, setIsPunching] = useState<string | null>(null);
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
   const [isLocating, setIsLocating] = useState(false);
+  const [employee, setEmployee] = useState<Employee | null>(null);
 
   useEffect(() => {
     const timer = setInterval(() => setCurrentTime(getCurrentTime()), 1000);
@@ -26,10 +27,38 @@ export const TimeClock: React.FC<Props> = ({ onUpdate, employeeId }) => {
   }, []);
 
   useEffect(() => {
+    const employees = getEmployees();
+    const emp = employees.find(e => String(e.id) === String(employeeId)) || null;
+    setEmployee(emp);
+    
     setTodayRecord(getTodayRecord(employeeId, getTodayString()));
     setTotalBankBalance(getBankBalance(employeeId));
     refreshLocation();
   }, [employeeId]);
+
+  const targetMinutesToday = useMemo(() => {
+    return getTargetMinutesForDate(getTodayString(), employee?.shortDayOfWeek ?? 6);
+  }, [employee]);
+
+  const isShortDay = targetMinutesToday > 0 && targetMinutesToday <= 240;
+
+  const nextRecommendedAction = useMemo(() => {
+      if (!todayRecord.entry) return 'entry';
+      
+      // Lógica diferenciada para Dia Curto (4h)
+      if (isShortDay) {
+          if (!todayRecord.snackStart) return 'snackStart';
+          if (!todayRecord.snackEnd) return 'snackEnd';
+          if (!todayRecord.exit) return 'exit';
+      } else {
+          // Lógica padrão para Dia Cheio (8h)
+          if (!todayRecord.lunchStart) return 'lunchStart';
+          if (!todayRecord.lunchEnd) return 'lunchEnd';
+          if (!todayRecord.exit) return 'exit';
+      }
+      
+      return null;
+  }, [todayRecord, isShortDay]);
 
   const refreshLocation = () => {
     const locConfig = getLocationConfig();
@@ -49,14 +78,6 @@ export const TimeClock: React.FC<Props> = ({ onUpdate, employeeId }) => {
         }
     }
   };
-
-  const nextRecommendedAction = useMemo(() => {
-      if (!todayRecord.entry) return 'entry';
-      if (!todayRecord.lunchStart) return 'lunchStart';
-      if (!todayRecord.lunchEnd) return 'lunchEnd';
-      if (!todayRecord.exit) return 'exit';
-      return null;
-  }, [todayRecord]);
 
   const handlePunch = async (type: TimeRecordType) => {
     setIsPunching(type);
@@ -127,9 +148,18 @@ export const TimeClock: React.FC<Props> = ({ onUpdate, employeeId }) => {
       )}
 
       <div className="text-center mb-6 md:mb-8 w-full">
-        <div className="mb-3 inline-flex items-center gap-2 bg-white px-4 py-1.5 rounded-full border shadow-sm text-slate-400 font-black text-[9px] uppercase tracking-widest">
-            {isLocating ? <RefreshCw size={12} className="animate-spin text-brand-500" /> : <ShieldCheck size={12} className="text-emerald-500" />}
-            {locationName}
+        <div className="flex flex-col items-center gap-2 mb-4">
+            <div className="inline-flex items-center gap-2 bg-white px-4 py-1.5 rounded-full border shadow-sm text-slate-400 font-black text-[9px] uppercase tracking-widest">
+                {isLocating ? <RefreshCw size={12} className="animate-spin text-brand-500" /> : <ShieldCheck size={12} className="text-emerald-500" />}
+                {locationName}
+            </div>
+            
+            {isShortDay && (
+                <div className="inline-flex items-center gap-2 bg-amber-500 text-white px-4 py-1.5 rounded-full shadow-md text-[10px] font-black uppercase tracking-widest animate-pulse border-2 border-white">
+                    <Info size={12} />
+                    Modo Dia Curto (4h) - Almoço Opcional
+                </div>
+            )}
         </div>
         
         <div className="relative inline-block">
@@ -153,10 +183,14 @@ export const TimeClock: React.FC<Props> = ({ onUpdate, employeeId }) => {
 
       <div className="grid grid-cols-2 md:grid-cols-3 gap-4 md:gap-6 w-full">
         <ActionButton type="entry" label="Entrada" icon={LogIn} colorClass="bg-gradient-to-br from-emerald-400 to-emerald-600" />
+        
+        {/* Ordem visual lógica adaptada: Almoço é secundário em dias curtos */}
         <ActionButton type="lunchStart" label="Almoço (Ida)" icon={Utensils} colorClass="bg-gradient-to-br from-amber-400 to-amber-600" />
         <ActionButton type="lunchEnd" label="Almoço (Volta)" icon={Utensils} colorClass="bg-gradient-to-br from-amber-400 to-amber-600" />
+        
         <ActionButton type="snackStart" label="Lanche (Ida)" icon={Coffee} colorClass="bg-gradient-to-br from-indigo-400 to-indigo-600" />
         <ActionButton type="snackEnd" label="Lanche (Volta)" icon={Coffee} colorClass="bg-gradient-to-br from-indigo-400 to-indigo-600" />
+        
         <ActionButton type="exit" label="Saída" icon={LogOut} colorClass="bg-gradient-to-br from-rose-400 to-rose-600" />
       </div>
       

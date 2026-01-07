@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect, useCallback } from 'react';
 import { ViewMode, Employee, DailyRecord } from './types';
 import { TimeClock } from './components/TimeClock';
@@ -7,9 +6,10 @@ import { BankDashboard } from './components/BankDashboard';
 import { AIAssistant } from './components/AIAssistant';
 import { EmployeeManager } from './components/EmployeeManager';
 import { Settings } from './components/Settings';
-import { getEmployees, getGoogleConfig, mergeExternalRecords, mergeExternalEmployees, getBankBalance } from './services/storageService';
-import { syncRowToSheet, readSheetData, readEmployeesFromSheet, syncEmployeeToSheet } from './services/googleSheetsService';
-import { Clock, FileSpreadsheet, LayoutDashboard, Bot, Menu, X, Users, ChevronDown, Settings as SettingsIcon, RefreshCw, ShieldCheck, Building2, CheckCircle } from 'lucide-react';
+import { getEmployees, getGoogleConfig, saveGoogleConfig, mergeExternalRecords, mergeExternalEmployees, getBankBalance } from './services/storageService';
+import { syncRowToSheet, readSheetData, readEmployeesFromSheet } from './services/googleSheetsService';
+// Added missing 'Users' icon import to fix line 168 error
+import { Clock, FileSpreadsheet, LayoutDashboard, Bot, Menu, ChevronDown, Settings as SettingsIcon, RefreshCw, ShieldCheck, Building2, Users } from 'lucide-react';
 import { PinModal } from './components/PinModal';
 
 const App: React.FC = () => {
@@ -54,15 +54,28 @@ const App: React.FC = () => {
   }, [refreshData]);
 
   useEffect(() => {
+    // AUTO-CONFIGURAÇÃO VIA URL (Resolve o problema de perda de config diária)
+    const urlParams = new URLSearchParams(window.location.search);
+    const setupUrl = urlParams.get('setup');
+    if (setupUrl) {
+        const decodedUrl = decodeURIComponent(setupUrl);
+        if (decodedUrl.includes('script.google.com')) {
+            saveGoogleConfig({ scriptUrl: decodedUrl, enabled: true });
+            // Limpa a URL para não ficar poluída, mas mantém a config no localStorage
+            window.history.replaceState({}, document.title, window.location.pathname);
+        }
+    }
+
     const loaded = getEmployees();
     setEmployees(loaded);
     if (loaded.length > 0 && !currentEmployeeId) {
       setCurrentEmployeeId(loaded[0].id);
     }
 
-    performSync(true);
-    const interval = setInterval(() => performSync(true), 30000);
+    // Sincronização imediata ao carregar
+    performSync(false);
     
+    const interval = setInterval(() => performSync(true), 30000);
     const handleFocus = () => performSync(true);
     window.addEventListener('focus', handleFocus);
 
