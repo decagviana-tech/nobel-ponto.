@@ -33,7 +33,8 @@ import {
   RefreshCw, 
   Building2, 
   Users, 
-  Loader2 
+  Loader2,
+  ShieldAlert
 } from 'lucide-react';
 import { PinModal } from './components/PinModal';
 
@@ -56,7 +57,7 @@ const App: React.FC = () => {
     setRefreshKey(prev => prev + 1);
   }, []);
 
-  const performSync = useCallback(async (silent: boolean = false) => {
+  const performSync = useCallback(async (silent: boolean = false, force: boolean = false) => {
     const config = getGoogleConfig();
     if (!config.enabled || !config.scriptUrl) return;
     if (!silent) setIsSyncing(true);
@@ -69,14 +70,19 @@ const App: React.FC = () => {
         readTransactionsFromSheet(config.scriptUrl)
       ]);
       
-      if (sheetEmployees) mergeExternalEmployees(sheetEmployees);
+      if (sheetEmployees) mergeExternalEmployees(sheetEmployees, force);
       if (sheetData) mergeExternalRecords(sheetData);
       if (sheetTransactions) mergeExternalTransactions(sheetTransactions);
       
       setLastSyncTime(new Date());
       refreshData();
+      
+      if (force && !silent) {
+        alert("✅ Sincronização Completa! A base de dados local foi unificada com a Planilha.");
+      }
     } catch (e) {
-      console.error("Erro na sincronização automática:", e);
+      console.error("Erro na sincronização:", e);
+      if (!silent) alert("Erro ao sincronizar com a planilha. Verifique a URL nas configurações.");
     } finally {
       if (!silent) setIsSyncing(false);
     }
@@ -112,10 +118,7 @@ const App: React.FC = () => {
 
     initialize();
     
-    // AUTO-SYNC: A cada 60 segundos o app verifica a planilha sozinho
     const interval = setInterval(() => performSync(true), 60000);
-    
-    // REFRESH AO VOLTAR: Sempre que o usuário clica na aba do navegador, ele sincroniza
     const handleFocus = () => performSync(true);
     window.addEventListener('focus', handleFocus);
 
@@ -167,7 +170,7 @@ const App: React.FC = () => {
       <div className="min-h-screen bg-slate-900 flex flex-col items-center justify-center text-white p-6 text-center">
         <Loader2 size={48} className="animate-spin text-brand-500 mb-4" />
         <h1 className="text-xl font-black uppercase tracking-tighter">Nobel Ponto Inteligente</h1>
-        <p className="text-slate-400 text-[10px] mt-2 uppercase tracking-[0.3em] animate-pulse">Sincronizando Nuvem...</p>
+        <p className="text-slate-400 text-[10px] mt-2 uppercase tracking-[0.3em] animate-pulse">Unificando Dados...</p>
       </div>
     );
   }
@@ -188,10 +191,11 @@ const App: React.FC = () => {
         </div>
         <div className="flex items-center gap-1">
           <button 
-            onClick={() => performSync()} 
+            onClick={() => performSync(false, true)} 
             className={`p-2 rounded-lg transition-all ${isSyncing ? 'text-brand-500 bg-brand-50' : 'text-slate-400'}`}
+            title="Sincronização Forçada"
           >
-            <RefreshCw size={20} className={isSyncing ? 'animate-spin' : ''} />
+            <ShieldAlert size={20} className={isSyncing ? 'animate-pulse' : ''} />
           </button>
           <button onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)} className="p-2 text-slate-600"><Menu size={24} /></button>
         </div>
@@ -238,16 +242,17 @@ const App: React.FC = () => {
         </nav>
 
         {lastSyncTime && (
-          <div className="mt-auto pt-4 border-t border-slate-100 px-2">
+          <div className="mt-auto pt-4 border-t border-slate-100 px-2 space-y-2">
             <button 
-              onClick={() => performSync()} 
+              onClick={() => performSync(false, true)} 
               disabled={isSyncing}
-              className={`w-full flex items-center justify-center gap-2 p-3 rounded-2xl text-[10px] font-black tracking-tighter uppercase transition-all duration-300 hover:scale-[1.02] active:scale-95 ${isSyncing ? 'bg-slate-100 text-slate-400' : 'bg-emerald-500 text-white shadow-xl shadow-emerald-100'}`}
+              className={`w-full flex items-center justify-center gap-2 p-3 rounded-2xl text-[10px] font-black tracking-tighter uppercase transition-all duration-300 hover:scale-[1.02] active:scale-95 ${isSyncing ? 'bg-slate-100 text-slate-400' : 'bg-brand-600 text-white shadow-xl shadow-brand-100'}`}
+              title="Sincronização profunda: Unifica funcionários e registros com a nuvem"
             >
-              {isSyncing ? <RefreshCw size={14} className="animate-spin" /> : <RefreshCw size={14} />}
-              {isSyncing ? 'SINCRONIZANDO...' : 'SINCRONIZAR AGORA'}
+              <ShieldAlert size={14} className={isSyncing ? 'animate-pulse' : ''} />
+              {isSyncing ? 'UNIFICANDO...' : 'UNIFICAR COM NUVEM'}
             </button>
-            <p className="text-[9px] text-center text-slate-400 mt-2 font-bold uppercase tracking-widest">Último Check: {lastSyncTime.toLocaleTimeString()}</p>
+            <p className="text-[9px] text-center text-slate-400 font-bold uppercase tracking-widest">Último Check: {lastSyncTime.toLocaleTimeString()}</p>
           </div>
         )}
       </div>
@@ -258,7 +263,7 @@ const App: React.FC = () => {
           {currentView === ViewMode.DASHBOARD && currentEmployeeId && <BankDashboard key={`${refreshKey}-${currentEmployeeId}`} employeeId={currentEmployeeId} />}
           {currentView === ViewMode.SHEET && currentEmployeeId && <SpreadsheetView key={`${refreshKey}-${currentEmployeeId}`} onUpdate={handleRecordUpdate} employeeId={currentEmployeeId} />}
           {currentView === ViewMode.AI_ASSISTANT && currentEmployeeId && <AIAssistant employeeId={currentEmployeeId} />}
-          {currentView === ViewMode.EMPLOYEES && <EmployeeManager key={refreshKey} onUpdate={async () => performSync()} currentEmployeeId={currentEmployeeId} onSelectEmployee={setCurrentEmployeeId} />}
+          {currentView === ViewMode.EMPLOYEES && <EmployeeManager key={refreshKey} onUpdate={async () => performSync(false, true)} currentEmployeeId={currentEmployeeId} onSelectEmployee={setCurrentEmployeeId} />}
           {currentView === ViewMode.SETTINGS && <Settings onConfigSaved={refreshData} />}
         </div>
       </main>

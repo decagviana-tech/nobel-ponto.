@@ -33,14 +33,13 @@ export const getEmployees = (): Employee[] => {
     }
   } catch (e) {}
   
-  const defaultEmployee: Employee = { id: '1', name: 'Gerente', role: 'Gerente', pin: '0000', active: true, shortDayOfWeek: 6 };
+  const defaultEmployee: Employee = { id: '1', name: 'Patrícia', role: 'ESTAGIÁRIA', pin: '0000', active: true, shortDayOfWeek: 6 };
   saveEmployees([defaultEmployee]);
   return [defaultEmployee];
 };
 
 export const saveEmployees = (employees: Employee[]) => localStorage.setItem(STORAGE_KEY_EMPLOYEES, JSON.stringify(employees));
 
-// Fix: Implement addEmployee to allow creating new employee records
 export const addEmployee = (employee: Omit<Employee, 'id'>): Employee => {
   const employees = getEmployees();
   const newEmployee = { ...employee, id: Date.now().toString() };
@@ -49,7 +48,6 @@ export const addEmployee = (employee: Omit<Employee, 'id'>): Employee => {
   return newEmployee;
 };
 
-// Fix: Implement updateEmployee to allow modification of existing employee data
 export const updateEmployee = (employee: Employee) => {
   const employees = getEmployees();
   const index = employees.findIndex(e => String(e.id) === String(employee.id));
@@ -59,7 +57,6 @@ export const updateEmployee = (employee: Employee) => {
   }
 };
 
-// Fix: Implement deleteEmployee to remove an employee and all their associated history
 export const deleteEmployee = (id: string) => {
   const employees = getEmployees().filter(e => String(e.id) !== String(id));
   saveEmployees(employees);
@@ -94,6 +91,18 @@ const deduplicateRecords = (records: DailyRecord[]): DailyRecord[] => {
         const fixedDate = normalizeDate(r.date);
         if (!fixedDate) return;
 
+        // Limpeza profunda de horários
+        const entry = normalizeTimeFromSheet(r.entry) || '';
+        const lunchStart = normalizeTimeFromSheet(r.lunchStart) || '';
+        const lunchEnd = normalizeTimeFromSheet(r.lunchEnd) || '';
+        const snackStart = normalizeTimeFromSheet(r.snackStart) || '';
+        const snackEnd = normalizeTimeFromSheet(r.snackEnd) || '';
+        const exit = normalizeTimeFromSheet(r.exit) || '';
+
+        // Ignora linhas que não tem nenhuma batida de horário (evita "fantasma")
+        const hasAnyTime = entry || lunchStart || lunchEnd || snackStart || snackEnd || exit;
+        if (!hasAnyTime) return;
+
         const key = `${fixedDate}_${r.employeeId}`;
         const emp = employees.find(e => String(e.id) === String(r.employeeId));
         const shortDay = emp?.shortDayOfWeek ?? 6;
@@ -101,12 +110,12 @@ const deduplicateRecords = (records: DailyRecord[]): DailyRecord[] => {
         const cleanRecord: DailyRecord = {
             ...r,
             date: fixedDate,
-            entry: normalizeTimeFromSheet(r.entry),
-            lunchStart: normalizeTimeFromSheet(r.lunchStart),
-            lunchEnd: normalizeTimeFromSheet(r.lunchEnd),
-            snackStart: normalizeTimeFromSheet(r.snackStart),
-            snackEnd: normalizeTimeFromSheet(r.snackEnd),
-            exit: normalizeTimeFromSheet(r.exit),
+            entry,
+            lunchStart,
+            lunchEnd,
+            snackStart,
+            snackEnd,
+            exit,
         };
         
         const stats = calculateDailyStats(cleanRecord, shortDay);
@@ -140,15 +149,29 @@ export const mergeExternalRecords = (externalRecords: DailyRecord[]) => {
     if (!Array.isArray(externalRecords)) return;
     const local = getAllRecords();
     const map = new Map(local.map(r => [`${normalizeDate(r.date)}_${r.employeeId}`, r]));
+    
     externalRecords.forEach(r => {
         const key = `${normalizeDate(r.date)}_${r.employeeId}`;
+        const existing = map.get(key);
+        
+        // Se a batida externa estiver vazia e a local tiver dados, mantemos a local
+        const hasExternalTime = r.entry || r.lunchStart || r.lunchEnd || r.exit;
+        if (!hasExternalTime && existing) return;
+
         map.set(key, r);
     });
     saveAllRecords(Array.from(map.values()));
 };
 
-export const mergeExternalEmployees = (external: Employee[]) => {
+export const mergeExternalEmployees = (external: Employee[], forceSync: boolean = false) => {
     if (!Array.isArray(external)) return;
+    
+    if (forceSync) {
+        // Na unificação forçada, a planilha é a verdade absoluta. Deleta locais que não estão lá.
+        saveEmployees(external);
+        return;
+    }
+
     const local = getEmployees();
     const map = new Map(local.map(e => [String(e.id), e]));
     external.forEach(e => {
@@ -194,7 +217,6 @@ export const getBankBalance = (employeeId: string): number => {
   return autoBalance + manualBalance;
 };
 
-// Fix: Implement resetBankBalance to clear records and transactions for a specific employee
 export const resetBankBalance = async (employeeId: string) => {
   const allRecords = getAllRecords().filter(r => String(r.employeeId) !== String(employeeId));
   saveAllRecords(allRecords);

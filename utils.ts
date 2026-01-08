@@ -53,7 +53,7 @@ export const normalizeDate = (dateStr: any): string => {
 };
 
 export const normalizeTimeFromSheet = (val: any): string => {
-  if (!val || val === "00:00:00" || val === "0:00:00") return '';
+  if (!val || val === "00:00:00" || val === "0:00:00" || val === "" || val === null) return '';
   let str = String(val).trim();
   
   if (str.includes('T')) {
@@ -72,13 +72,20 @@ export const normalizeTimeFromSheet = (val: any): string => {
 export const getTargetMinutesForDate = (dateIso: string, shortDayOfWeek: number = 6): number => {
     try {
         const normalized = normalizeDate(dateIso);
+        
+        // CORREÇÃO: Início oficial do banco de horas em 2026.
+        if (normalized < '2026-01-01') return 0;
+
+        // Feriado de Ano Novo (01 de Janeiro de 2026) - Meta Zero
+        if (normalized === '2026-01-01') return 0;
+
         const date = parseISO(normalized);
         if (!isValid(date)) return 480;
         const dayOfWeek = getDay(date);
         
         if (dayOfWeek === 0) return 0; // Domingo
-        if (dayOfWeek === shortDayOfWeek) return 240; // Dia padrão curto (4h)
-        return 480; // Dia padrão cheio (8h)
+        if (dayOfWeek === shortDayOfWeek) return 240; // Sábado (ou dia curto escolhido)
+        return 480; // Dia padrão (8h)
     } catch {
         return 480;
     }
@@ -97,28 +104,20 @@ export const calculateDailyStats = (record: DailyRecord, shortDayOfWeek: number 
   let worked = 0;
 
   if (t.ent !== null) {
-      // O ponto final é a Saída, ou o último intervalo registrado caso ainda esteja trabalhando
       const endPoint = t.sai ?? t.sF ?? t.sI ?? t.lF ?? t.lI;
       
       if (endPoint !== null && endPoint > t.ent) {
-          // Tempo total decorrido desde a entrada
           worked = (endPoint - t.ent);
-          
-          // Subtrai o tempo de almoço (apenas se tiver início e fim)
-          if (t.lI !== null && t.lF !== null && t.lF > t.lI) {
-              worked -= (t.lF - t.lI);
-          }
-          
-          // Subtrai o tempo de lanche (apenas se tiver início e fim)
-          if (t.sI !== null && t.sF !== null && t.sF > t.sI) {
-              worked -= (t.sF - t.sI);
-          }
+          if (t.lI !== null && t.lF !== null && t.lF > t.lI) worked -= (t.lF - t.lI);
+          if (t.sI !== null && t.sF !== null && t.sF > t.sI) worked -= (t.sF - t.sI);
       }
   }
 
   const target = getTargetMinutesForDate(record.date, shortDayOfWeek);
+  
+  // Se o funcionário bateu entrada e saída, o saldo é o que ele trabalhou menos a meta.
+  // Se não bateu nada, o saldo é a meta negativa.
   const isComplete = t.ent !== null && t.sai !== null;
-  // Se não saiu ainda, o saldo é baseado no que trabalhou até agora menos a meta do dia
   const balance = isComplete ? (worked - target) : (worked > 0 ? (worked - target) : -target);
   
   return { total: worked, target: target, balance: balance };
