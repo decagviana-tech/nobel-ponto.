@@ -58,6 +58,8 @@ const App: React.FC = () => {
   const [pendingEmployeeId, setPendingEmployeeId] = useState<string | null>(null);
   const [isInitializing, setIsInitializing] = useState(true);
 
+  // Controle de Trava de Sincronização
+  const syncLockRef = useRef<number>(0); 
   const hasInitializedSelection = useRef(false);
 
   const refreshData = useCallback(() => {
@@ -68,6 +70,9 @@ const App: React.FC = () => {
   }, []);
 
   const performSync = useCallback(async (silent: boolean = false, force: boolean = false) => {
+    // Se a trava estiver ativa, não baixa dados da nuvem (evita o "pulo" de volta)
+    if (Date.now() < syncLockRef.current && !force) return;
+
     const config = getGoogleConfig();
     if (!config.enabled || !config.scriptUrl || !window.navigator.onLine) return;
     if (!silent) setIsSyncing(true);
@@ -80,9 +85,11 @@ const App: React.FC = () => {
       const sheetEmployees = results[0].status === 'fulfilled' ? results[0].value : null;
       const sheetData = results[1].status === 'fulfilled' ? results[1].value : null;
       const sheetTransactions = results[2].status === 'fulfilled' ? results[2].value : null;
+      
       if (sheetEmployees) mergeExternalEmployees(sheetEmployees, force);
       if (sheetData) mergeExternalRecords(sheetData);
       if (sheetTransactions) mergeExternalTransactions(sheetTransactions);
+      
       setLastSyncTime(new Date());
       refreshData();
     } catch (e) {
@@ -141,6 +148,14 @@ const App: React.FC = () => {
         setIsSyncing(false);
       }
     }
+  };
+
+  const handleEmployeeUpdateFromManager = async (emp?: Employee) => {
+      // ATIVA A TRAVA DE SINCRONIZAÇÃO POR 60 SEGUNDOS para dar tempo do Google processar o POST
+      syncLockRef.current = Date.now() + 60000; 
+      refreshData();
+      // IMPORTANTE: NÃO chamamos performSync(true, true) aqui, 
+      // pois ele baixaria os dados antigos da nuvem antes do Google terminar de atualizar!
   };
 
   const currentEmployee = useMemo(() => {
@@ -295,7 +310,7 @@ const App: React.FC = () => {
                 {currentView === ViewMode.DASHBOARD && currentEmployeeId && <BankDashboard key={`${refreshKey}-${currentEmployeeId}`} employeeId={currentEmployeeId} />}
                 {currentView === ViewMode.SHEET && currentEmployeeId && <SpreadsheetView key={`${refreshKey}-${currentEmployeeId}`} onUpdate={handleRecordUpdate} employeeId={currentEmployeeId} />}
                 {currentView === ViewMode.AI_ASSISTANT && currentEmployeeId && <AIAssistant employeeId={currentEmployeeId} />}
-                {currentView === ViewMode.EMPLOYEES && <EmployeeManager key={refreshKey} onUpdate={async () => performSync(false, true)} currentEmployeeId={currentEmployeeId} onSelectEmployee={setCurrentEmployeeId} />}
+                {currentView === ViewMode.EMPLOYEES && <EmployeeManager key={refreshKey} onUpdate={handleEmployeeUpdateFromManager} currentEmployeeId={currentEmployeeId} onSelectEmployee={setCurrentEmployeeId} />}
                 {currentView === ViewMode.SETTINGS && <Settings onConfigSaved={refreshData} />}
             </>
           )}
