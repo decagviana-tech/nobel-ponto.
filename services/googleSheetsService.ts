@@ -2,30 +2,46 @@
 import { DailyRecord, Employee, BankTransaction } from '../types';
 import { minutesToHHMM, normalizeTimeFromSheet } from '../utils';
 
-export const readEmployeesFromSheet = async (scriptUrl: string): Promise<Employee[] | null> => {
-    if (!scriptUrl) return null;
+/**
+ * Helper para chamadas GET com tratamento de erro silencioso
+ */
+const fetchWithRetry = async (url: string) => {
+    if (!window.navigator.onLine) return null;
     try {
-        const response = await fetch(`${scriptUrl}?action=getEmployees`);
-        if (!response.ok) throw new Error("Network response was not ok");
-        const data = await response.json();
-        if (!Array.isArray(data)) return null;
-        return data.map((emp: any) => ({
-            ...emp,
-            id: String(emp.id),
-            pin: String(emp.pin || '')
-        }));
-    } catch (error) {
-        console.error("Error fetching employees from script", error);
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 10000); // 10s timeout
+        
+        const response = await fetch(url, { 
+            signal: controller.signal,
+            headers: { 'Accept': 'application/json' }
+        });
+        
+        clearTimeout(timeoutId);
+        if (!response.ok) return null;
+        return await response.json();
+    } catch (e) {
         return null;
     }
 };
 
+export const readEmployeesFromSheet = async (scriptUrl: string): Promise<Employee[] | null> => {
+    if (!scriptUrl || !scriptUrl.startsWith('http')) return null;
+    const data = await fetchWithRetry(`${scriptUrl}?action=getEmployees`);
+    if (!Array.isArray(data)) return null;
+    
+    return data.map((emp: any) => ({
+        ...emp,
+        id: String(emp.id),
+        pin: String(emp.pin || ''),
+        shortDayOfWeek: emp.shortDayOfWeek !== undefined && emp.shortDayOfWeek !== null ? Number(emp.shortDayOfWeek) : undefined,
+        standardDailyMinutes: emp.standardDailyMinutes !== undefined && emp.standardDailyMinutes !== null ? Number(emp.standardDailyMinutes) : undefined,
+        bankStartDate: emp.bankStartDate || undefined // Lê a data de início da coluna O (ou campo correspondente no JSON)
+    }));
+};
+
 export const readSheetData = async (scriptUrl: string): Promise<DailyRecord[] | null> => {
-  if (!scriptUrl) return null;
-  try {
-    const response = await fetch(`${scriptUrl}?action=getRecords`);
-    if (!response.ok) throw new Error("Network response was not ok");
-    const data = await response.json();
+    if (!scriptUrl || !scriptUrl.startsWith('http')) return null;
+    const data = await fetchWithRetry(`${scriptUrl}?action=getRecords`);
     if (!Array.isArray(data)) return null;
     
     return data.map((rec: any) => ({
@@ -38,32 +54,51 @@ export const readSheetData = async (scriptUrl: string): Promise<DailyRecord[] | 
         snackEnd: normalizeTimeFromSheet(rec.snackEnd),
         exit: normalizeTimeFromSheet(rec.exit),
     }));
-  } catch (error) {
-    console.error("Error fetching records from script", error);
-    return null;
-  }
 };
 
 export const readTransactionsFromSheet = async (scriptUrl: string): Promise<BankTransaction[] | null> => {
-    if (!scriptUrl) return null;
-    try {
-        const response = await fetch(`${scriptUrl}?action=getTransactions`);
-        if (!response.ok) return null;
-        const data = await response.json();
-        if (!Array.isArray(data)) return null;
-        return data.map((t: any) => ({
-            ...t,
-            id: String(t.id),
-            employeeId: String(t.employeeId)
-        }));
-    } catch (e) {
-        console.error("Erro ao ler transações:", e);
-        return null;
-    }
+    if (!scriptUrl || !scriptUrl.startsWith('http')) return null;
+    const data = await fetchWithRetry(`${scriptUrl}?action=getTransactions`);
+    if (!Array.isArray(data)) return null;
+    
+    return data.map((t: any) => ({
+        ...t,
+        id: String(t.id),
+        employeeId: String(t.employeeId)
+    }));
 };
 
-export const clearCloudRecords = async (scriptUrl: string, employeeId: string) => {
-    if (!scriptUrl) return;
+export const syncRowToSheet = async (scriptUrl: string, record: DailyRecord, employeeName: string, currentTotalBalance: number, empConfig?: { shortDay?: number, dailyMinutes?: number }) => {
+  if (!scriptUrl || !window.navigator.onLine) return;
+  try {
+    const totalFormatted = minutesToHHMM(record.totalMinutes);
+    const balanceFormatted = minutesToHHMM(record.balanceMinutes);
+
+    await fetch(scriptUrl, {
+        method: 'POST',
+        mode: 'no-cors', 
+        keepalive: true, 
+        headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+        body: JSON.stringify({
+            action: 'syncRow',
+            data: { 
+                ...record, 
+                employeeId: String(record.employeeId), 
+                employeeName,
+                currentTotalBalance: minutesToHHMM(currentTotalBalance),
+                totalFormatted,
+                balanceFormatted,
+                standardDailyMinutes: empConfig?.dailyMinutes ?? 480,
+                shortDayOfWeek: empConfig?.shortDay ?? 6
+            }
+        })
+    });
+  } catch (error) {
+  }
+};
+
+export const syncEmployeeToSheet = async (scriptUrl: string, employee: Employee) => {
+    if (!scriptUrl || !window.navigator.onLine) return;
     try {
         await fetch(scriptUrl, {
             method: 'POST',
@@ -71,52 +106,22 @@ export const clearCloudRecords = async (scriptUrl: string, employeeId: string) =
             keepalive: true,
             headers: { 'Content-Type': 'text/plain;charset=utf-8' },
             body: JSON.stringify({
-                action: 'deleteRecords',
-                data: { employeeId: String(employeeId) }
+                action: 'syncEmployee',
+                data: { 
+                    ...employee, 
+                    id: String(employee.id), 
+                    pin: String(employee.pin || ''),
+                    shortDayOfWeek: employee.shortDayOfWeek,
+                    standardDailyMinutes: employee.standardDailyMinutes,
+                    bankStartDate: employee.bankStartDate // Envia para a Coluna O
+                }
             })
         });
-        return true;
-    } catch (e) {
-        console.error("Erro ao limpar nuvem:", e);
-        return false;
-    }
-};
-
-export const syncRowToSheet = async (scriptUrl: string, record: DailyRecord, employeeName: string, currentTotalBalance: number) => {
-  if (!scriptUrl) return;
-  try {
-    // IMPORTANTE: Enviamos os valores formatados como STRING para o Sheets.
-    // Isso evita que o Sheets tente fazer cálculos errados em cima das células.
-    const totalFormatted = minutesToHHMM(record.totalMinutes);
-    const balanceFormatted = minutesToHHMM(record.balanceMinutes);
-
-    await fetch(scriptUrl, {
-        method: 'POST',
-        mode: 'no-cors',
-        keepalive: true, 
-        headers: {
-            'Content-Type': 'text/plain;charset=utf-8',
-        },
-        body: JSON.stringify({
-            action: 'syncRow',
-            data: { 
-                ...record, 
-                employeeId: String(record.employeeId), 
-                employeeName,
-                // Enviamos o saldo total da conta do funcionário também para referência
-                currentTotalBalance: minutesToHHMM(currentTotalBalance),
-                totalFormatted,
-                balanceFormatted
-            }
-        })
-    });
-  } catch (error) {
-    console.error("Error pushing row to script", error);
-  }
-};
+    } catch (error) {}
+}
 
 export const syncTransactionToSheet = async (scriptUrl: string, transaction: BankTransaction) => {
-    if (!scriptUrl) return;
+    if (!scriptUrl || !window.navigator.onLine) return;
     try {
         await fetch(scriptUrl, {
             method: 'POST',
@@ -127,13 +132,11 @@ export const syncTransactionToSheet = async (scriptUrl: string, transaction: Ban
                 data: { ...transaction, id: String(transaction.id), employeeId: String(transaction.employeeId) }
             })
         });
-    } catch (e) {
-        console.error("Erro ao sincronizar transação:", e);
-    }
+    } catch (e) {}
 };
 
 export const deleteTransactionFromSheet = async (scriptUrl: string, id: string) => {
-    if (!scriptUrl) return;
+    if (!scriptUrl || !window.navigator.onLine) return;
     try {
         await fetch(scriptUrl, {
             method: 'POST',
@@ -144,27 +147,5 @@ export const deleteTransactionFromSheet = async (scriptUrl: string, id: string) 
                 data: { id: String(id) }
             })
         });
-    } catch (e) {
-        console.error("Erro ao deletar transação na nuvem:", e);
-    }
+    } catch (e) {}
 };
-
-export const syncEmployeeToSheet = async (scriptUrl: string, employee: Employee) => {
-    if (!scriptUrl) return;
-    try {
-        await fetch(scriptUrl, {
-            method: 'POST',
-            mode: 'no-cors',
-            keepalive: true,
-            headers: {
-                'Content-Type': 'text/plain;charset=utf-8',
-            },
-            body: JSON.stringify({
-                action: 'syncEmployee',
-                data: { ...employee, id: String(employee.id), pin: String(employee.pin || '') }
-            })
-        });
-    } catch (error) {
-        console.error("Error pushing employee to script", error);
-    }
-}

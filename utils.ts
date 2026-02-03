@@ -1,6 +1,6 @@
 
 import { DailyRecord } from './types';
-import { format, getDay, eachDayOfInterval, startOfMonth, endOfMonth, parseISO, isValid } from 'date-fns';
+import { format, getDay, eachDayOfInterval, startOfMonth, endOfMonth, parseISO, isValid, isToday } from 'date-fns';
 
 export const formatTime = (minutes: number): string => {
   if (isNaN(minutes)) return '0h 00m';
@@ -69,29 +69,29 @@ export const normalizeTimeFromSheet = (val: any): string => {
   return "";
 };
 
-export const getTargetMinutesForDate = (dateIso: string, shortDayOfWeek: number = 6): number => {
+export const getTargetMinutesForDate = (dateIso: string, shortDayOfWeek: number = 6, standardMinutes: number = 480): number => {
     try {
         const normalized = normalizeDate(dateIso);
-        
-        // CORREÇÃO: Início oficial do banco de horas em 2026.
-        if (normalized < '2026-01-01') return 0;
-
-        // Feriado de Ano Novo (01 de Janeiro de 2026) - Meta Zero
-        if (normalized === '2026-01-01') return 0;
-
         const date = parseISO(normalized);
-        if (!isValid(date)) return 480;
+        if (!isValid(date)) return standardMinutes;
+
+        const holidays = ['2025-01-01', '2025-04-18', '2025-04-21', '2025-05-01', '2025-09-07', '2025-10-12', '2025-11-02', '2025-11-15', '2025-11-20', '2025-12-25', '2026-01-01'];
+        if (holidays.includes(normalized)) return 0;
+
         const dayOfWeek = getDay(date);
-        
         if (dayOfWeek === 0) return 0; // Domingo
-        if (dayOfWeek === shortDayOfWeek) return 240; // Sábado (ou dia curto escolhido)
-        return 480; // Dia padrão (8h)
+        
+        // Se for dia curto, geralmente é metade da jornada padrão ou 4h fixas
+        // Para manter a regra da Nobel, o dia curto é 4h (240 min)
+        if (dayOfWeek === shortDayOfWeek) return 240; 
+        
+        return standardMinutes; // Retorna a jornada específica do funcionário (8h, 6h, etc)
     } catch {
-        return 480;
+        return standardMinutes;
     }
 };
 
-export const calculateDailyStats = (record: DailyRecord, shortDayOfWeek: number = 6): { total: number, balance: number, target: number } => {
+export const calculateDailyStats = (record: DailyRecord, shortDayOfWeek: number = 6, standardMinutes: number = 480): { total: number, balance: number, target: number } => {
   const t = {
     ent: timeStringToMinutes(record.entry),
     lI: timeStringToMinutes(record.lunchStart),
@@ -104,23 +104,32 @@ export const calculateDailyStats = (record: DailyRecord, shortDayOfWeek: number 
   let worked = 0;
 
   if (t.ent !== null) {
-      const endPoint = t.sai ?? t.sF ?? t.sI ?? t.lF ?? t.lI;
+      let endPoint = t.sai ?? t.sF ?? t.sI ?? t.lF ?? t.lI;
       
+      if (endPoint === null && isToday(parseISO(record.date))) {
+          const now = new Date();
+          endPoint = now.getHours() * 60 + now.getMinutes();
+      }
+
       if (endPoint !== null && endPoint > t.ent) {
           worked = (endPoint - t.ent);
+          
           if (t.lI !== null && t.lF !== null && t.lF > t.lI) worked -= (t.lF - t.lI);
+          else if (t.lI !== null && isToday(parseISO(record.date)) && endPoint > t.lI && t.lF === null) {
+              worked -= (endPoint - t.lI);
+          }
+          
           if (t.sI !== null && t.sF !== null && t.sF > t.sI) worked -= (t.sF - t.sI);
+          else if (t.sI !== null && isToday(parseISO(record.date)) && endPoint > t.sI && t.sF === null) {
+              worked -= (endPoint - t.sI);
+          }
       }
   }
 
-  const target = getTargetMinutesForDate(record.date, shortDayOfWeek);
+  const target = getTargetMinutesForDate(record.date, shortDayOfWeek, standardMinutes);
+  const balance = worked - target;
   
-  // Se o funcionário bateu entrada e saída, o saldo é o que ele trabalhou menos a meta.
-  // Se não bateu nada, o saldo é a meta negativa.
-  const isComplete = t.ent !== null && t.sai !== null;
-  const balance = isComplete ? (worked - target) : (worked > 0 ? (worked - target) : -target);
-  
-  return { total: worked, target: target, balance: balance };
+  return { total: Math.max(0, worked), target: target, balance: balance };
 };
 
 export const getTodayString = () => format(new Date(), 'yyyy-MM-dd');

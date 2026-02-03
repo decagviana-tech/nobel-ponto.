@@ -12,21 +12,48 @@ const getAIInstance = () => {
     return new GoogleGenAI({ apiKey });
 };
 
+/**
+ * Extrai apenas o texto das partes da resposta, ignorando assinaturas de pensamento (thought)
+ * que causam avisos de 'non-text parts' no console.
+ */
+const extractCleanText = (response: any): string => {
+    try {
+        const parts = response.candidates?.[0]?.content?.parts || [];
+        return parts
+            .filter((part: any) => part.text)
+            .map((part: any) => part.text)
+            .join(' ')
+            .trim();
+    } catch (e) {
+        return "";
+    }
+};
+
 export const getQuickInsight = async (records: DailyRecord[], balance: number): Promise<string> => {
     const ai = getAIInstance();
     if (!ai) return "Sistema Nobel Operacional.";
 
     try {
-        const recent = records.slice(-3).map(r => ({ d: r.date, t: formatTime(r.totalMinutes) }));
-        const prompt = `Analise brevemente: Saldo ${formatTime(balance)}, Últimos: ${JSON.stringify(recent)}. Dê um micro-insight motivador de 10 palavras para o colaborador Nobel Petrópolis.`;
+        const formattedBalance = formatTime(balance);
+        const status = balance >= 0 ? "positivo" : "negativo";
+        
+        // Novo prompt extremamente restrito e neutro
+        const prompt = `Com base no saldo de banco de horas: ${formattedBalance}. 
+        Sua tarefa é informar o colaborador sobre seu saldo de forma neutra e direta.
+        REGRA: Diga apenas "Seu saldo está ${status} em ${formattedBalance}."
+        Não adicione frases motivacionais, não fale sobre pontualidade e não dê conselhos. 
+        Seja curto e objetivo.`;
 
         const response = await ai.models.generateContent({
             model: MODEL_TEXT,
-            contents: prompt
+            contents: prompt,
+            config: { thinkingConfig: { thinkingBudget: 0 } }
         });
-        return response.text?.trim() || "Mantenha o foco e a pontualidade!";
+        
+        const cleanText = extractCleanText(response);
+        return cleanText || `Seu saldo está ${status} em ${formattedBalance}.`;
     } catch {
-        return "Sua produtividade é nossa prioridade!";
+        return balance >= 0 ? `Seu saldo está positivo em ${formatTime(balance)}.` : `Seu saldo está negativo em ${formatTime(balance)}.`;
     }
 };
 
@@ -38,23 +65,30 @@ export const analyzeTimesheet = async (records: DailyRecord[], balance: number, 
         const history = records.slice(-10).map(r => ({
             data: r.date,
             total: formatTime(r.totalMinutes),
-            saldo: formatTime(r.balanceMinutes),
-            status: (r.entry && !r.exit) ? "Pendente" : "OK"
+            saldo: formatTime(r.balanceMinutes)
         }));
 
-        const prompt = `Você é o "Nobel Auditor", assistente de RH da Nobel Petrópolis.
-        Contexto: Saldo ${formatTime(balance)}, Histórico: ${JSON.stringify(history)}.
-        Pergunta: "${query}". Responda de forma curta e profissional.`;
+        const prompt = `Você é o Auditor Nobel, assistente técnico de RH da Nobel Petrópolis.
+        CONTEXTO: Saldo Atual: ${formatTime(balance)}, Histórico Recente: ${JSON.stringify(history)}.
+        PERGUNTA DO COLABORADOR: "${query}".
+        
+        DIRETRIZES DE RESPOSTA:
+        1. Responda apenas o que foi perguntado de forma técnica e numérica.
+        2. Use o formato: "Seu saldo está [positivo/negativo] em [valor]".
+        3. Nunca use frases como "você está quase em dia", "continue brilhando" ou "indicando pontualidade".
+        4. Mantenha um tom sério, profissional e puramente informativo.
+        5. Se a pergunta for fora de contexto, responda apenas informando o saldo atual.`;
 
         const response = await ai.models.generateContent({
             model: MODEL_TEXT,
-            contents: prompt
+            contents: prompt,
+            config: { thinkingConfig: { thinkingBudget: 0 } }
         });
         
-        return response.text || "Não consegui processar sua dúvida agora.";
+        return extractCleanText(response) || `Seu saldo atual é de ${formatTime(balance)}.`;
     } catch (error: any) {
         if (error?.message?.includes("429")) return "ERRO_LIMITE_ATINGIDO";
-        return "Conexão instável. Tente perguntar novamente.";
+        return "Serviço de análise temporariamente indisponível.";
     }
 };
 

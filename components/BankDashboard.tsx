@@ -2,12 +2,12 @@
 import React, { useEffect, useState, useMemo } from 'react';
 import { getRecords, getBankBalance, getEmployees, resetBankBalance, getGoogleConfig } from '../services/storageService';
 import { getQuickInsight } from '../services/geminiService';
-import { formatTime } from '../utils';
-import { Clock, Target, AlertTriangle, CalendarCheck, Settings2, Star, Calendar, Sparkles, TrendingUp, TrendingDown, ChevronRight, ShieldCheck, HeartPulse, RefreshCw, Trash2, Loader2, DatabaseZap, ExternalLink, FileSpreadsheet } from 'lucide-react';
-import { DailyRecord } from '../types';
+import { formatTime, calculateDailyStats } from '../utils';
+import { Clock, Target, AlertTriangle, CalendarCheck, Settings2, Star, Calendar, Sparkles, TrendingUp, TrendingDown, ChevronRight, ShieldCheck, HeartPulse, RefreshCw, Trash2, Loader2, DatabaseZap, ExternalLink, FileSpreadsheet, History } from 'lucide-react';
+import { DailyRecord, Employee } from '../types';
 import { BankManagement } from './BankManagement';
 import { PinModal } from './PinModal';
-import { startOfWeek, endOfWeek, eachDayOfInterval, format } from 'date-fns';
+import { startOfWeek, endOfWeek, eachDayOfInterval, format, parseISO } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 
 interface Props {
@@ -17,11 +17,13 @@ interface Props {
 export const BankDashboard: React.FC<Props> = ({ employeeId }) => {
   const [records, setRecords] = useState<DailyRecord[]>([]);
   const [bankBalance, setBankBalance] = useState(0);
+  const [employee, setEmployee] = useState<Employee | null>(null);
   const [aiInsight, setAiInsight] = useState<string | null>(null);
   const [showManagement, setShowManagement] = useState(false);
   const [isPinModalOpen, setIsPinModalOpen] = useState(false);
   const [managerPin, setManagerPin] = useState('');
   const [isResetting, setIsResetting] = useState(false);
+  const [tick, setTick] = useState(0);
 
   const now = new Date();
   const currentMonthPrefix = format(now, 'yyyy-MM');
@@ -29,9 +31,15 @@ export const BankDashboard: React.FC<Props> = ({ employeeId }) => {
 
   useEffect(() => {
       loadData();
+      const interval = setInterval(() => setTick(t => t + 1), 60000);
+      return () => clearInterval(interval);
   }, [employeeId]);
 
   const loadData = async () => {
+    const allEmps = getEmployees();
+    const emp = allEmps.find(e => String(e.id) === String(employeeId)) || null;
+    setEmployee(emp);
+    
     const recs = getRecords(employeeId);
     const bal = getBankBalance(employeeId);
     setRecords(recs);
@@ -42,32 +50,30 @@ export const BankDashboard: React.FC<Props> = ({ employeeId }) => {
   };
 
   const handleResetNuclear = async () => {
-      const config = getGoogleConfig();
-      let msg = "⚠️ ATENÇÃO: RESET DE SALDO\n\nIsso apagará o histórico deste funcionário no seu dispositivo.\n\nIMPORTANTE: Se você usa a Planilha Google, os dados podem voltar na próxima sincronização. Você deve apagar as linhas desse funcionário na planilha manualmente para um reset definitivo.";
-      
+      let msg = "⚠️ ATENÇÃO: ZERAR SALDO\n\nIsso definirá o dia de hoje como o novo início do banco de horas para este funcionário. O saldo acumulado anterior será ignorado no Dashboard.";
       if (confirm(msg)) {
           setIsResetting(true);
-          
-          // 1. Limpa localmente primeiro
           await resetBankBalance(employeeId);
-          
-          // 2. Atualiza a tela imediatamente para 0
-          setRecords([]);
-          setBankBalance(0);
-          setAiInsight("Saldo zerado localmente. Verifique sua planilha se os dados persistirem.");
-          
-          // 3. Pequeno delay para garantir que o storage salvou
-          setTimeout(() => {
-              setIsResetting(false);
-              alert("✅ Saldo zerado no aplicativo!\n\nSe os números voltarem sozinhos, apague os registros deste funcionário na sua Planilha Google.");
-          }, 1000);
+          await loadData();
+          setIsResetting(false);
+          alert("✅ Saldo reiniciado com sucesso!");
       }
   };
 
   const recordsThisMonth = useMemo(() => records.filter(r => r.date.startsWith(currentMonthPrefix)), [records, currentMonthPrefix]);
-  const presenceThisMonth = useMemo(() => recordsThisMonth.filter(r => r.totalMinutes > 0).length, [recordsThisMonth]);
-  const balanceThisMonth = useMemo(() => recordsThisMonth.reduce((acc, r) => acc + (r.balanceMinutes || 0), 0), [recordsThisMonth]);
-  const totalWorkedMonth = useMemo(() => recordsThisMonth.reduce((acc, r) => acc + (r.totalMinutes || 0), 0), [recordsThisMonth]);
+  const presenceThisMonth = useMemo(() => recordsThisMonth.filter(r => r.totalMinutes > 0 || r.entry).length, [recordsThisMonth]);
+  
+  // Cálculo de saldo e total considerando tempo real do tick
+  const statsThisMonth = useMemo(() => {
+      let total = 0;
+      let balance = 0;
+      recordsThisMonth.forEach(r => {
+          const s = calculateDailyStats(r, employee?.shortDayOfWeek ?? 6, employee?.standardDailyMinutes ?? 480);
+          total += s.total;
+          balance += s.balance;
+      });
+      return { total, balance };
+  }, [recordsThisMonth, employee, tick]);
 
   const inconsistentDays = useMemo(() => {
       return recordsThisMonth.filter(r => {
@@ -84,10 +90,13 @@ export const BankDashboard: React.FC<Props> = ({ employeeId }) => {
   const workedThisWeek = useMemo(() => {
     return records
         .filter(r => weekDays.includes(r.date))
-        .reduce((acc, curr) => acc + curr.totalMinutes, 0);
-  }, [records, weekDays]);
+        .reduce((acc, curr) => {
+            const s = calculateDailyStats(curr, employee?.shortDayOfWeek ?? 6, employee?.standardDailyMinutes ?? 480);
+            return acc + s.total;
+        }, 0);
+  }, [records, weekDays, employee, tick]);
   
-  const weeklyGoal = 2640; 
+  const weeklyGoal = 2640; // 44h
   const weeklyProgress = Math.min(Math.round((workedThisWeek / weeklyGoal) * 100), 100);
 
   const handleOpenManagement = () => {
@@ -101,6 +110,11 @@ export const BankDashboard: React.FC<Props> = ({ employeeId }) => {
       }
   };
 
+  const displayBankStartDate = useMemo(() => {
+      if (!employee?.bankStartDate) return 'Início do App';
+      return new Date(employee.bankStartDate + 'T12:00:00').toLocaleDateString('pt-BR');
+  }, [employee]);
+
   return (
     <div className="w-full space-y-6 animate-fade-in pb-10">
       <PinModal isOpen={isPinModalOpen} onClose={() => setIsPinModalOpen(false)} onSuccess={() => setShowManagement(true)} correctPin={managerPin} />
@@ -113,7 +127,11 @@ export const BankDashboard: React.FC<Props> = ({ employeeId }) => {
             </div>
             <div>
                 <h3 className="font-bold text-slate-900 text-xl capitalize">{currentMonthLabel}</h3>
-                <p className="text-sm text-slate-400 font-medium italic">Análise de Performance Nobel</p>
+                <div className="flex items-center gap-2 mt-0.5">
+                    <span className="text-[10px] bg-slate-100 text-slate-500 px-2 py-0.5 rounded-full font-black uppercase flex items-center gap-1 border border-slate-200">
+                        <History size={10} /> Vigência: {displayBankStartDate}
+                    </span>
+                </div>
             </div>
           </div>
           
@@ -124,7 +142,7 @@ export const BankDashboard: React.FC<Props> = ({ employeeId }) => {
                 className="flex items-center gap-2 bg-rose-600 text-white px-5 py-3 rounded-2xl text-xs font-black hover:bg-rose-700 transition-all disabled:opacity-50 shadow-xl shadow-rose-200 group"
               >
                   {isResetting ? <Loader2 size={16} className="animate-spin" /> : <DatabaseZap size={18} />}
-                  {isResetting ? 'ZERANDO...' : 'ZERAR SALDO AGORA'}
+                  {isResetting ? 'ZERANDO...' : 'ZERAR SALDO'}
               </button>
               <button onClick={handleOpenManagement} className="flex items-center gap-2 bg-slate-900 text-white px-6 py-3 rounded-2xl text-sm font-bold hover:bg-black shadow-xl transition-all active:scale-95 group">
                 <Settings2 size={18} className="group-hover:rotate-90 transition-transform" /> 
@@ -146,12 +164,12 @@ export const BankDashboard: React.FC<Props> = ({ employeeId }) => {
               </div>
               
               <div className="mt-auto">
-                <div className="p-5 bg-white/10 backdrop-blur-xl rounded-[2rem] border border-white/20 flex gap-4 items-start shadow-inner">
-                    <div className="bg-white/20 p-2 rounded-full">
-                        <Sparkles size={18} className="text-yellow-200" />
+                <div className="p-5 bg-white/10 backdrop-blur-xl rounded-[2rem] border border-white/20 flex gap-4 items-center shadow-inner min-h-[80px]">
+                    <div className="bg-white/20 p-2 rounded-full shrink-0">
+                        <Sparkles size={18} className="text-white" />
                     </div>
-                    <p className="text-sm font-medium leading-relaxed italic text-brand-50">
-                        {aiInsight || "Auditoria em tempo real ativa."}
+                    <p className="text-sm font-black leading-tight text-white uppercase tracking-tight">
+                        {aiInsight || "Auditoria técnica ativa."}
                     </p>
                 </div>
               </div>
@@ -161,16 +179,16 @@ export const BankDashboard: React.FC<Props> = ({ employeeId }) => {
           <div className="lg:col-span-7 bg-white rounded-[2.5rem] p-10 shadow-xl border border-slate-100 flex flex-col justify-between hover:border-brand-200 transition-colors">
               <div className="flex justify-between items-start">
                   <div>
-                      <h2 className="text-xs font-black text-slate-400 uppercase tracking-widest mb-2">Resumo de Auditoria</h2>
+                      <h2 className="text-xs font-black text-slate-400 uppercase tracking-widest mb-2">Resumo Mensal</h2>
                       <div className="flex items-center gap-4">
                         <div>
                             <p className="text-[10px] text-slate-400 font-bold uppercase">Trabalhado</p>
-                            <p className="text-2xl font-black text-slate-800">{formatTime(totalWorkedMonth)}</p>
+                            <p className="text-2xl font-black text-slate-800">{formatTime(statsThisMonth.total)}</p>
                         </div>
                         <div className="text-slate-200 text-3xl font-light">|</div>
                         <div>
                             <p className="text-[10px] text-slate-400 font-bold uppercase">Saldo Líquido</p>
-                            <p className={`text-2xl font-black ${balanceThisMonth >= 0 ? 'text-emerald-600' : 'text-rose-600'}`}>{formatTime(balanceThisMonth)}</p>
+                            <p className={`text-2xl font-black ${statsThisMonth.balance >= 0 ? 'text-emerald-600' : 'text-rose-600'}`}>{formatTime(statsThisMonth.balance)}</p>
                         </div>
                       </div>
                   </div>
@@ -221,7 +239,7 @@ export const BankDashboard: React.FC<Props> = ({ employeeId }) => {
                   </div>
                   <div>
                       <p className="font-bold text-brand-100">Sincronização com Nuvem Ativa</p>
-                      <p className="text-xs text-slate-400">Se o saldo zerado voltar, apague as linhas deste funcionário no Google Sheets.</p>
+                      <p className="text-xs text-slate-400">Auditoria técnica baseada nos registros oficiais da Planilha Google.</p>
                   </div>
               </div>
               <button 
