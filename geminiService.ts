@@ -1,7 +1,7 @@
 
 import { GoogleGenAI, Modality } from "@google/genai";
-import { DailyRecord } from "../types";
-import { formatTime } from "../utils";
+import { DailyRecord } from "../types.ts";
+import { formatTime } from "../utils.ts";
 
 const MODEL_TEXT = 'gemini-3-flash-preview';
 const MODEL_TTS = 'gemini-2.5-flash-preview-tts';
@@ -12,78 +12,44 @@ const getAIInstance = () => {
     return new GoogleGenAI({ apiKey });
 };
 
-// Fix: Removed manual extractCleanText helper in favor of the standardized .text property from the SDK response
-
 export const getQuickInsight = async (records: DailyRecord[], balance: number): Promise<string> => {
     const ai = getAIInstance();
-    if (!ai) return "Sistema Nobel Operacional.";
-
+    if (!ai) return "Sistema Operacional.";
     try {
-        const formattedBalance = formatTime(balance);
         const status = balance >= 0 ? "positivo" : "negativo";
-        
-        // Novo prompt extremamente restrito e neutro
-        const prompt = `Com base no saldo de banco de horas: ${formattedBalance}. 
-        Sua tarefa é informar o colaborador sobre seu saldo de forma neutra e direta.
-        REGRA: Diga apenas "Seu saldo está ${status} em ${formattedBalance}."
-        Não adicione frases motivacionais, não fale sobre pontualidade e não dê conselhos. 
-        Seja curto e objetivo.`;
-
+        const prompt = `Informe o colaborador sobre o saldo: ${formatTime(balance)}. Seja neutro e use apenas uma frase curta: "Seu saldo está ${status} em ${formatTime(balance)}."`;
         const response = await ai.models.generateContent({
             model: MODEL_TEXT,
             contents: prompt,
             config: { thinkingConfig: { thinkingBudget: 0 } }
         });
-        
-        // Fix: Use response.text property directly as recommended by @google/genai guidelines
-        return response.text || `Seu saldo está ${status} em ${formattedBalance}.`;
+        return response.text || `Saldo ${status}: ${formatTime(balance)}`;
     } catch {
-        return balance >= 0 ? `Seu saldo está positivo em ${formatTime(balance)}.` : `Seu saldo está negativo em ${formatTime(balance)}.`;
+        return `Saldo: ${formatTime(balance)}`;
     }
 };
 
 export const analyzeTimesheet = async (records: DailyRecord[], balance: number, query: string): Promise<string> => {
     const ai = getAIInstance();
     if (!ai) return "ERRO_CHAVE_AUSENTE";
-
     try {
-        const history = records.slice(-10).map(r => ({
-            data: r.date,
-            total: formatTime(r.totalMinutes),
-            saldo: formatTime(r.balanceMinutes)
-        }));
-
-        const prompt = `Você é o Auditor Nobel, assistente técnico de RH da Nobel Petrópolis.
-        CONTEXTO: Saldo Atual: ${formatTime(balance)}, Histórico Recente: ${JSON.stringify(history)}.
-        PERGUNTA DO COLABORADOR: "${query}".
-        
-        DIRETRIZES DE RESPOSTA:
-        1. Responda apenas o que foi perguntado de forma técnica e numérica.
-        2. Use o formato: "Seu saldo está [positivo/negativo] em [valor]".
-        3. Nunca use frases como "você está quase em dia", "continue brilhando" ou "indicando pontualidade".
-        4. Mantenha um tom sério, profissional e puramente informativo.
-        5. Se a pergunta for fora de contexto, responda apenas informando o saldo atual.`;
-
+        const history = records.slice(-5).map(r => `${r.date}: ${formatTime(r.totalMinutes)}`);
+        const prompt = `Auditor RH Nobel. Saldo: ${formatTime(balance)}. Histórico: ${history.join(', ')}. Pergunta: ${query}. Responda de forma técnica e curta.`;
         const response = await ai.models.generateContent({
             model: MODEL_TEXT,
             contents: prompt,
             config: { thinkingConfig: { thinkingBudget: 0 } }
         });
-        
-        // Fix: Use response.text property directly instead of manual parts parsing
-        return response.text || `Seu saldo atual é de ${formatTime(balance)}.`;
-    } catch (error: any) {
-        if (error?.message?.includes("429")) return "ERRO_LIMITE_ATINGIDO";
-        return "Serviço de análise temporariamente indisponível.";
+        return response.text || "Consulta processada.";
+    } catch {
+        return "Serviço indisponível.";
     }
 };
 
 function decode(base64: string) {
     const binaryString = atob(base64);
     const bytes = new Uint8Array(binaryString.length);
-    for (let i = 0; i < binaryString.length; i++) {
-        bytes[i] = binaryString.charCodeAt(i);
-    }
+    for (let i = 0; i < binaryString.length; i++) bytes[i] = binaryString.charCodeAt(i);
     return bytes;
 }
 

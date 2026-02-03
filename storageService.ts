@@ -1,6 +1,6 @@
 
-import { DailyRecord, Employee, GoogleConfig, BankTransaction, LocationConfig } from '../types';
-import { calculateDailyStats, normalizeDate, getTargetMinutesForDate } from '../utils';
+import { DailyRecord, Employee, GoogleConfig, BankTransaction, LocationConfig } from '../types.ts';
+import { calculateDailyStats, normalizeDate, getTargetMinutesForDate } from '../utils.ts';
 import { parseISO, eachDayOfInterval, isBefore, startOfDay, format, isValid, isToday, startOfMonth } from 'date-fns';
 
 const STORAGE_KEY_RECORDS = 'smartpoint_records_v2';
@@ -104,7 +104,6 @@ export const mergeExternalEmployees = (external: Employee[]) => {
                 ...existing,
                 ...e,
                 id,
-                // PROTEÇÃO: Só atualiza Vigência e Contrato se o que vier da nuvem NÃO estiver vazio
                 bankStartDate: (e.bankStartDate && e.bankStartDate !== "" && e.bankStartDate !== "null") ? e.bankStartDate : existing.bankStartDate,
                 shortDayOfWeek: (e.shortDayOfWeek !== undefined && e.shortDayOfWeek !== null) ? Number(e.shortDayOfWeek) : existing.shortDayOfWeek,
                 standardDailyMinutes: (e.standardDailyMinutes !== undefined && e.standardDailyMinutes !== null) ? Number(e.standardDailyMinutes) : existing.standardDailyMinutes,
@@ -136,9 +135,9 @@ export const addEmployee = (employee: Omit<Employee, 'id'>): Employee => {
   return newEmployee;
 };
 
-// Fix: Added missing snackStart and snackEnd properties to the default object to match DailyRecord interface
 export const getTodayRecord = (employeeId: string, date: string): DailyRecord => {
-  return getRecords(employeeId).find(r => r.date === date) || { 
+  const found = getRecords(employeeId).find(r => r.date === date);
+  return found || { 
       date, employeeId, entry: '', lunchStart: '', lunchEnd: '', snackStart: '', snackEnd: '', exit: '', 
       totalMinutes: 0, balanceMinutes: 0 
   };
@@ -158,13 +157,14 @@ export const mergeExternalRecords = (external: DailyRecord[]) => {
     const map = new Map<string, DailyRecord>();
     local.forEach(r => map.set(`${r.date}_${r.employeeId}`, r));
     external.forEach(r => {
-        // Sanitização básica para evitar falhas de carregamento
         if (r.date && r.employeeId) {
             map.set(`${r.date}_${r.employeeId}`, {
                 ...r,
                 entry: r.entry || '',
                 lunchStart: r.lunchStart || '',
                 lunchEnd: r.lunchEnd || '',
+                snackStart: r.snackStart || '',
+                snackEnd: r.snackEnd || '',
                 exit: r.exit || ''
             });
         }

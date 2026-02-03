@@ -1,17 +1,17 @@
 
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
-import { ViewMode, Employee, DailyRecord } from './types';
+import { ViewMode, Employee, DailyRecord } from './types.ts';
 
-// Componentes
-import { TimeClock } from './components/TimeClock';
-import { SpreadsheetView } from './components/SpreadsheetView';
-import { BankDashboard } from './components/BankDashboard';
-import { AIAssistant } from './components/AIAssistant';
-import { EmployeeManager } from './components/EmployeeManager';
-import { Settings } from './components/Settings';
-import { PinModal } from './components/PinModal';
+// Componentes com extensões explícitas para resolver erro de build
+import { TimeClock } from './components/TimeClock.tsx';
+import { SpreadsheetView } from './components/SpreadsheetView.tsx';
+import { BankDashboard } from './components/BankDashboard.tsx';
+import { AIAssistant } from './components/AIAssistant.tsx';
+import { EmployeeManager } from './components/EmployeeManager.tsx';
+import { Settings } from './components/Settings.tsx';
+import { PinModal } from './components/PinModal.tsx';
 
-// Serviços
+// Serviços com extensões explícitas
 import { 
   getEmployees, 
   getGoogleConfig, 
@@ -20,13 +20,13 @@ import {
   mergeExternalEmployees, 
   mergeExternalTransactions, 
   getBankBalance 
-} from './services/storageService';
+} from './services/storageService.ts';
 import { 
   readSheetData, 
   readEmployeesFromSheet, 
   readTransactionsFromSheet,
   syncRowToSheet
-} from './services/googleSheetsService';
+} from './services/googleSheetsService.ts';
 
 import { 
   Clock, 
