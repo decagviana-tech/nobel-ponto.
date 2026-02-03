@@ -40,7 +40,6 @@ export const TimeClock: React.FC<Props> = ({ onUpdate, employeeId }) => {
   const nextRecommendedAction = useMemo(() => {
       if (!todayRecord.entry) return 'entry';
       if (isShortDay) {
-          // No dia curto, geralmente não tem almoço, mas pode ter lanche de 15min
           if (!todayRecord.snackStart) return 'snackStart';
           if (!todayRecord.snackEnd) return 'snackEnd';
           if (!todayRecord.exit) return 'exit';

@@ -1,12 +1,17 @@
 
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { ViewMode, Employee, DailyRecord } from './types';
+
+// Imports de Componentes (Pastas em Inglês)
 import { TimeClock } from './components/TimeClock';
 import { SpreadsheetView } from './components/SpreadsheetView';
 import { BankDashboard } from './components/BankDashboard';
 import { AIAssistant } from './components/AIAssistant';
 import { EmployeeManager } from './components/EmployeeManager';
 import { Settings } from './components/Settings';
+import { PinModal } from './components/PinModal';
+
+// Imports de Serviços (Pastas em Inglês)
 import { 
   getEmployees, 
   getGoogleConfig, 
@@ -22,6 +27,7 @@ import {
   readTransactionsFromSheet,
   syncRowToSheet
 } from './services/googleSheetsService';
+
 import { 
   Clock, 
   FileSpreadsheet, 
@@ -41,7 +47,6 @@ import {
   CloudLightning,
   RefreshCcw
 } from 'lucide-react';
-import { PinModal } from './components/PinModal';
 
 const App: React.FC = () => {
   const [currentView, setCurrentView] = useState<ViewMode>(ViewMode.CLOCK);
@@ -68,7 +73,6 @@ const App: React.FC = () => {
   }, []);
 
   const performSync = useCallback(async (silent: boolean = false, force: boolean = false) => {
-    // Trava de sincronização para evitar sobrescrever dados recém-salvos
     if (Date.now() < syncLockRef.current && !force) return;
 
     const config = getGoogleConfig();
@@ -91,7 +95,7 @@ const App: React.FC = () => {
       setLastSyncTime(new Date());
       refreshData();
     } catch (e) {
-      if (!silent) console.warn("Sincronização pendente ou erro na rede.");
+      if (!silent) console.warn("Sincronização pendente.");
     } finally {
       if (!silent) setIsSyncing(false);
     }
@@ -204,7 +208,7 @@ const App: React.FC = () => {
       <div className="min-h-screen bg-slate-900 flex flex-col items-center justify-center text-white p-6 text-center">
         <Loader2 size={48} className="animate-spin text-brand-500 mb-4" />
         <h1 className="text-xl font-black uppercase tracking-tighter">Nobel Ponto Inteligente</h1>
-        <p className="text-slate-400 text-[10px] mt-2 uppercase tracking-[0.3em] animate-pulse">Sincronizando Estrutura Unificada...</p>
+        <p className="text-slate-400 text-[10px] mt-2 uppercase tracking-[0.3em] animate-pulse">Iniciando Build Seguro...</p>
       </div>
     );
   }
