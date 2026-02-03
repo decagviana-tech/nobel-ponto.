@@ -1,5 +1,5 @@
 
-export type TimeRecordType = 'entry' | 'lunchStart' | 'lunchEnd' | 'exit';
+export type TimeRecordType = 'entry' | 'lunchStart' | 'lunchEnd' | 'snackStart' | 'snackEnd' | 'exit';
 
 export interface Employee {
   id: string;
@@ -12,15 +12,14 @@ export interface Employee {
   bankStartDate?: string;
 }
 
-// Fix: Added snackStart and snackEnd as optional fields to match the tracking requirements and spreadsheet format.
 export interface DailyRecord {
   date: string;
   employeeId: string;
   entry: string;
   lunchStart: string;
   lunchEnd: string;
-  snackStart?: string;
-  snackEnd?: string;
+  snackStart: string;
+  snackEnd: string;
   exit: string;
   totalMinutes: number;
   balanceMinutes: number;

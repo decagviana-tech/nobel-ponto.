@@ -57,11 +57,6 @@ export const getBankBalance = (employeeId: string): number => {
   if (employee.bankStartDate) {
       const customStart = parseISO(employee.bankStartDate);
       if (isValid(customStart)) startDate = startOfDay(customStart);
-  } else {
-      const idAsTimestamp = parseInt(employee.id);
-      if (!isNaN(idAsTimestamp) && idAsTimestamp > 1000000000000) {
-          startDate = startOfDay(new Date(idAsTimestamp));
-      }
   }
 
   const today = startOfDay(new Date());
@@ -84,14 +79,6 @@ export const getBankBalance = (employeeId: string): number => {
   return totalBalance + transactions.reduce((acc, curr) => acc + curr.amountMinutes, 0);
 };
 
-export const getTransactions = (employeeId: string): BankTransaction[] => {
-    try {
-        const data = localStorage.getItem(STORAGE_KEY_TRANSACTIONS);
-        if (!data) return [];
-        return JSON.parse(data).filter((t: any) => String(t.employeeId) === String(employeeId));
-    } catch { return []; }
-};
-
 export const updateRecord = (updatedRecord: DailyRecord): DailyRecord[] => {
   const allRecords = getAllRecords();
   const emp = getEmployees().find(e => String(e.id) === String(updatedRecord.employeeId));
@@ -103,7 +90,7 @@ export const updateRecord = (updatedRecord: DailyRecord): DailyRecord[] => {
   return allRecords.filter(r => String(r.employeeId) === String(updatedRecord.employeeId));
 };
 
-export const mergeExternalEmployees = (external: Employee[], _force?: boolean) => {
+export const mergeExternalEmployees = (external: Employee[]) => {
     if (!Array.isArray(external)) return;
     const local = getEmployees();
     const map = new Map<string, Employee>();
@@ -117,7 +104,7 @@ export const mergeExternalEmployees = (external: Employee[], _force?: boolean) =
                 ...existing,
                 ...e,
                 id,
-                // PROTEÇÃO: Não deixa a nuvem apagar a data de início local se vier vazia
+                // PROTEÇÃO: Só atualiza Vigência e Contrato se o que vier da nuvem NÃO estiver vazio
                 bankStartDate: (e.bankStartDate && e.bankStartDate !== "" && e.bankStartDate !== "null") ? e.bankStartDate : existing.bankStartDate,
                 shortDayOfWeek: (e.shortDayOfWeek !== undefined && e.shortDayOfWeek !== null) ? Number(e.shortDayOfWeek) : existing.shortDayOfWeek,
                 standardDailyMinutes: (e.standardDailyMinutes !== undefined && e.standardDailyMinutes !== null) ? Number(e.standardDailyMinutes) : existing.standardDailyMinutes,
@@ -125,11 +112,6 @@ export const mergeExternalEmployees = (external: Employee[], _force?: boolean) =
         } else { map.set(id, { ...e, id }); }
     });
     saveEmployees(Array.from(map.values()));
-};
-
-export const deleteEmployee = (id: string) => {
-  saveEmployees(getEmployees().filter(e => String(e.id) !== String(id)));
-  saveAllRecords(getAllRecords().filter(r => String(r.employeeId) !== String(id)));
 };
 
 export const updateEmployee = (employee: Employee) => {
@@ -141,6 +123,11 @@ export const updateEmployee = (employee: Employee) => {
   }
 };
 
+export const deleteEmployee = (id: string) => {
+  saveEmployees(getEmployees().filter(e => String(e.id) !== String(id)));
+  saveAllRecords(getAllRecords().filter(r => String(r.employeeId) !== String(id)));
+};
+
 export const addEmployee = (employee: Omit<Employee, 'id'>): Employee => {
   const employees = getEmployees();
   const newEmployee = { ...employee, id: Date.now().toString() };
@@ -149,21 +136,20 @@ export const addEmployee = (employee: Omit<Employee, 'id'>): Employee => {
   return newEmployee;
 };
 
+// Fix: Added missing snackStart and snackEnd properties to the default object to match DailyRecord interface
 export const getTodayRecord = (employeeId: string, date: string): DailyRecord => {
   return getRecords(employeeId).find(r => r.date === date) || { 
-      date, employeeId, entry: '', lunchStart: '', lunchEnd: '', exit: '', 
+      date, employeeId, entry: '', lunchStart: '', lunchEnd: '', snackStart: '', snackEnd: '', exit: '', 
       totalMinutes: 0, balanceMinutes: 0 
   };
 };
 
-export const resetBankBalance = async (employeeId: string) => {
-  saveAllRecords(getAllRecords().filter(r => String(r.employeeId) !== String(employeeId)));
-  const employees = getEmployees();
-  const empIdx = employees.findIndex(e => String(e.id) === String(employeeId));
-  if (empIdx !== -1) { 
-      employees[empIdx].bankStartDate = format(new Date(), 'yyyy-MM-dd'); 
-      saveEmployees(employees); 
-  }
+export const getTransactions = (employeeId: string): BankTransaction[] => {
+    try {
+        const data = localStorage.getItem(STORAGE_KEY_TRANSACTIONS);
+        if (!data) return [];
+        return JSON.parse(data).filter((t: any) => String(t.employeeId) === String(employeeId));
+    } catch { return []; }
 };
 
 export const mergeExternalRecords = (external: DailyRecord[]) => {
@@ -171,7 +157,18 @@ export const mergeExternalRecords = (external: DailyRecord[]) => {
     const local = getAllRecords();
     const map = new Map<string, DailyRecord>();
     local.forEach(r => map.set(`${r.date}_${r.employeeId}`, r));
-    external.forEach(r => map.set(`${r.date}_${r.employeeId}`, r));
+    external.forEach(r => {
+        // Sanitização básica para evitar falhas de carregamento
+        if (r.date && r.employeeId) {
+            map.set(`${r.date}_${r.employeeId}`, {
+                ...r,
+                entry: r.entry || '',
+                lunchStart: r.lunchStart || '',
+                lunchEnd: r.lunchEnd || '',
+                exit: r.exit || ''
+            });
+        }
+    });
     saveAllRecords(Array.from(map.values()));
 };
 
@@ -209,3 +206,13 @@ export const getLocationConfig = (): LocationConfig => {
     } catch { return { useFixed: false, fixedName: '' }; }
 };
 export const saveLocationConfig = (config: LocationConfig) => localStorage.setItem(STORAGE_KEY_LOCATION, JSON.stringify(config));
+
+export const resetBankBalance = async (employeeId: string) => {
+  saveAllRecords(getAllRecords().filter(r => String(r.employeeId) !== String(employeeId)));
+  const employees = getEmployees();
+  const empIdx = employees.findIndex(e => String(e.id) === String(employeeId));
+  if (empIdx !== -1) { 
+      employees[empIdx].bankStartDate = format(new Date(), 'yyyy-MM-dd'); 
+      saveEmployees(employees); 
+  }
+};

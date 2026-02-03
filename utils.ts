@@ -78,21 +78,34 @@ export const calculateDailyStats = (record: DailyRecord, shortDayOfWeek: number 
     ent: timeStringToMinutes(record.entry),
     lI: timeStringToMinutes(record.lunchStart),
     lF: timeStringToMinutes(record.lunchEnd),
+    sI: timeStringToMinutes(record.snackStart),
+    sF: timeStringToMinutes(record.snackEnd),
     sai: timeStringToMinutes(record.exit)
   };
 
   let worked = 0;
   if (t.ent !== null) {
-      let endPoint = t.sai ?? t.lF ?? t.lI;
-      if (endPoint === null && isToday(parseISO(record.date))) {
+      let endPoint = t.sai ?? t.sF ?? t.sI ?? t.lF ?? t.lI;
+      if (t.sai === null && isToday(parseISO(record.date))) {
           const now = new Date();
           endPoint = now.getHours() * 60 + now.getMinutes();
       }
+      
       if (endPoint !== null && endPoint > t.ent) {
           worked = (endPoint - t.ent);
-          if (t.lI !== null && t.lF !== null && t.lF > t.lI) worked -= (t.lF - t.lI);
-          else if (t.lI !== null && isToday(parseISO(record.date)) && endPoint > t.lI && t.lF === null) {
+          
+          // Desconto do Almoço
+          if (t.lI !== null && t.lF !== null && t.lF > t.lI) {
+              worked -= (t.lF - t.lI);
+          } else if (t.lI !== null && t.lF === null && endPoint > t.lI) {
               worked -= (endPoint - t.lI);
+          }
+
+          // Desconto do Lanche (os 15 minutos ou o tempo real registrado)
+          if (t.sI !== null && t.sF !== null && t.sF > t.sI) {
+              worked -= (t.sF - t.sI);
+          } else if (t.sI !== null && t.sF === null && endPoint > t.sI) {
+              worked -= (endPoint - t.sI);
           }
       }
   }

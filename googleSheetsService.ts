@@ -9,7 +9,7 @@ const fetchWithRetry = async (url: string) => {
     if (!window.navigator.onLine) return null;
     try {
         const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), 10000); // 10s timeout
+        const timeoutId = setTimeout(() => controller.abort(), 12000); // 12s timeout
         
         const response = await fetch(url, { 
             signal: controller.signal,
@@ -35,7 +35,7 @@ export const readEmployeesFromSheet = async (scriptUrl: string): Promise<Employe
         pin: String(emp.pin || ''),
         shortDayOfWeek: emp.shortDayOfWeek !== undefined && emp.shortDayOfWeek !== null ? Number(emp.shortDayOfWeek) : undefined,
         standardDailyMinutes: emp.standardDailyMinutes !== undefined && emp.standardDailyMinutes !== null ? Number(emp.standardDailyMinutes) : undefined,
-        bankStartDate: emp.bankStartDate || undefined // Lê a data de início da coluna O (ou campo correspondente no JSON)
+        bankStartDate: emp.bankStartDate || undefined
     }));
 };
 
@@ -113,7 +113,7 @@ export const syncEmployeeToSheet = async (scriptUrl: string, employee: Employee)
                     pin: String(employee.pin || ''),
                     shortDayOfWeek: employee.shortDayOfWeek,
                     standardDailyMinutes: employee.standardDailyMinutes,
-                    bankStartDate: employee.bankStartDate // Envia para a Coluna O
+                    bankStartDate: employee.bankStartDate
                 }
             })
         });

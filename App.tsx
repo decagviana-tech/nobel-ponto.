@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { ViewMode, Employee, DailyRecord } from './types';
 import { TimeClock } from './components/TimeClock';
@@ -82,11 +81,12 @@ const App: React.FC = () => {
         readSheetData(config.scriptUrl),
         readTransactionsFromSheet(config.scriptUrl)
       ]);
-      const sheetEmployees = results[0].status === 'fulfilled' ? results[0].value : null;
-      const sheetData = results[1].status === 'fulfilled' ? results[1].value : null;
-      const sheetTransactions = results[2].status === 'fulfilled' ? results[2].value : null;
+      const sheetEmployees = results[0].status === 'fulfilled' ? (results[0] as any).value : null;
+      const sheetData = results[1].status === 'fulfilled' ? (results[1] as any).value : null;
+      const sheetTransactions = results[2].status === 'fulfilled' ? (results[2] as any).value : null;
       
-      if (sheetEmployees) mergeExternalEmployees(sheetEmployees, force);
+      // Fix: Removed 'force' argument as mergeExternalEmployees only accepts 1 argument
+      if (sheetEmployees) mergeExternalEmployees(sheetEmployees);
       if (sheetData) mergeExternalRecords(sheetData);
       if (sheetTransactions) mergeExternalTransactions(sheetTransactions);
       
@@ -310,7 +310,6 @@ const App: React.FC = () => {
                 {currentView === ViewMode.DASHBOARD && currentEmployeeId && <BankDashboard key={`${refreshKey}-${currentEmployeeId}`} employeeId={currentEmployeeId} />}
                 {currentView === ViewMode.SHEET && currentEmployeeId && <SpreadsheetView key={`${refreshKey}-${currentEmployeeId}`} onUpdate={handleRecordUpdate} employeeId={currentEmployeeId} />}
                 {currentView === ViewMode.AI_ASSISTANT && currentEmployeeId && <AIAssistant employeeId={currentEmployeeId} />}
-                {/* Fix: Passed setCurrentEmployeeId via a closure to resolve Dispatch vs (id: string) => void mismatch (Error in App.tsx line 313) */}
                 {currentView === ViewMode.EMPLOYEES && <EmployeeManager key={refreshKey} onUpdate={handleEmployeeUpdateFromManager} currentEmployeeId={currentEmployeeId} onSelectEmployee={(id) => setCurrentEmployeeId(id)} />}
                 {currentView === ViewMode.SETTINGS && <Settings onConfigSaved={refreshData} />}
             </>
