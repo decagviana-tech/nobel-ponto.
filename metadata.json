@@ -1,0 +1,9 @@
+{
+  "name": "Nobel Ponto Inteligente",
+  "description": "Sistema de ponto eletrônico avançado com auditoria por IA e geolocalização para Nobel Petrópolis.",
+  "requestFramePermissions": [
+    "geolocation",
+    "camera",
+    "microphone"
+  ]
+}
