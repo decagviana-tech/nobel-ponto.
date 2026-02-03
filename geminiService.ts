@@ -12,22 +12,7 @@ const getAIInstance = () => {
     return new GoogleGenAI({ apiKey });
 };
 
-/**
- * Extrai apenas o texto das partes da resposta, ignorando assinaturas de pensamento (thought)
- * que causam avisos de 'non-text parts' no console.
- */
-const extractCleanText = (response: any): string => {
-    try {
-        const parts = response.candidates?.[0]?.content?.parts || [];
-        return parts
-            .filter((part: any) => part.text)
-            .map((part: any) => part.text)
-            .join(' ')
-            .trim();
-    } catch (e) {
-        return "";
-    }
-};
+// Fix: Removed manual extractCleanText helper in favor of the standardized .text property from the SDK response
 
 export const getQuickInsight = async (records: DailyRecord[], balance: number): Promise<string> => {
     const ai = getAIInstance();
@@ -50,8 +35,8 @@ export const getQuickInsight = async (records: DailyRecord[], balance: number): 
             config: { thinkingConfig: { thinkingBudget: 0 } }
         });
         
-        const cleanText = extractCleanText(response);
-        return cleanText || `Seu saldo está ${status} em ${formattedBalance}.`;
+        // Fix: Use response.text property directly as recommended by @google/genai guidelines
+        return response.text || `Seu saldo está ${status} em ${formattedBalance}.`;
     } catch {
         return balance >= 0 ? `Seu saldo está positivo em ${formatTime(balance)}.` : `Seu saldo está negativo em ${formatTime(balance)}.`;
     }
@@ -85,7 +70,8 @@ export const analyzeTimesheet = async (records: DailyRecord[], balance: number, 
             config: { thinkingConfig: { thinkingBudget: 0 } }
         });
         
-        return extractCleanText(response) || `Seu saldo atual é de ${formatTime(balance)}.`;
+        // Fix: Use response.text property directly instead of manual parts parsing
+        return response.text || `Seu saldo atual é de ${formatTime(balance)}.`;
     } catch (error: any) {
         if (error?.message?.includes("429")) return "ERRO_LIMITE_ATINGIDO";
         return "Serviço de análise temporariamente indisponível.";

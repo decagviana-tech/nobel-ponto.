@@ -26,9 +26,7 @@ export const getGoogleConfig = (): GoogleConfig => {
   try {
     const data = localStorage.getItem(STORAGE_KEY_CONFIG);
     return data ? JSON.parse(data) : { scriptUrl: '', enabled: false };
-  } catch {
-    return { scriptUrl: '', enabled: false };
-  }
+  } catch { return { scriptUrl: '', enabled: false }; }
 };
 
 export const saveGoogleConfig = (config: GoogleConfig) => localStorage.setItem(STORAGE_KEY_CONFIG, JSON.stringify(config));
@@ -52,20 +50,17 @@ export const getBankBalance = (employeeId: string): number => {
   const employee = getEmployees().find(e => String(e.id) === String(employeeId));
   
   if (!employee) return 0;
-
   const shortDay = employee.shortDayOfWeek ?? 6;
   const standardMinutes = employee.standardDailyMinutes ?? 480;
 
   let startDate = startOfMonth(new Date());
-  
   if (employee.bankStartDate) {
       const customStart = parseISO(employee.bankStartDate);
       if (isValid(customStart)) startDate = startOfDay(customStart);
   } else {
       const idAsTimestamp = parseInt(employee.id);
       if (!isNaN(idAsTimestamp) && idAsTimestamp > 1000000000000) {
-          const creationDate = startOfDay(new Date(idAsTimestamp));
-          if (isValid(creationDate)) startDate = creationDate;
+          startDate = startOfDay(new Date(idAsTimestamp));
       }
   }
 
@@ -74,12 +69,10 @@ export const getBankBalance = (employeeId: string): number => {
 
   const days = eachDayOfInterval({ start: startDate, end: today });
   let totalBalance = 0;
-
   days.forEach(day => {
       const dateStr = format(day, 'yyyy-MM-dd');
       const record = records.find(r => r.date === dateStr);
       const target = getTargetMinutesForDate(dateStr, shortDay, standardMinutes);
-      
       if (record) {
           const stats = calculateDailyStats(record, shortDay, standardMinutes);
           totalBalance += stats.balance;
@@ -88,8 +81,7 @@ export const getBankBalance = (employeeId: string): number => {
       }
   });
 
-  const manualBalance = transactions.reduce((acc, curr) => acc + curr.amountMinutes, 0);
-  return totalBalance + manualBalance;
+  return totalBalance + transactions.reduce((acc, curr) => acc + curr.amountMinutes, 0);
 };
 
 export const getTransactions = (employeeId: string): BankTransaction[] => {
@@ -105,25 +97,13 @@ export const updateRecord = (updatedRecord: DailyRecord): DailyRecord[] => {
   const emp = getEmployees().find(e => String(e.id) === String(updatedRecord.employeeId));
   const stats = calculateDailyStats(updatedRecord, emp?.shortDayOfWeek ?? 6, emp?.standardDailyMinutes ?? 480);
   const finalRecord = { ...updatedRecord, totalMinutes: stats.total, balanceMinutes: stats.balance };
-
   const idx = allRecords.findIndex(r => r.date === updatedRecord.date && String(r.employeeId) === String(updatedRecord.employeeId));
-  if (idx !== -1) allRecords[idx] = finalRecord;
-  else allRecords.push(finalRecord);
-
+  if (idx !== -1) allRecords[idx] = finalRecord; else allRecords.push(finalRecord);
   saveAllRecords(allRecords);
   return allRecords.filter(r => String(r.employeeId) === String(updatedRecord.employeeId));
 };
 
-export const mergeExternalRecords = (external: DailyRecord[]) => {
-    if (!Array.isArray(external)) return;
-    const local = getAllRecords();
-    const map = new Map<string, DailyRecord>();
-    local.forEach(r => map.set(`${r.date}_${r.employeeId}`, r));
-    external.forEach(r => map.set(`${r.date}_${r.employeeId}`, r));
-    saveAllRecords(Array.from(map.values()));
-};
-
-export const mergeExternalEmployees = (external: Employee[], forceSync: boolean = false) => {
+export const mergeExternalEmployees = (external: Employee[], _force?: boolean) => {
     if (!Array.isArray(external)) return;
     const local = getEmployees();
     const map = new Map<string, Employee>();
@@ -137,40 +117,27 @@ export const mergeExternalEmployees = (external: Employee[], forceSync: boolean 
                 ...existing,
                 ...e,
                 id,
+                // PROTEÇÃO: Não deixa a nuvem apagar a data de início local se vier vazia
                 bankStartDate: (e.bankStartDate && e.bankStartDate !== "" && e.bankStartDate !== "null") ? e.bankStartDate : existing.bankStartDate,
                 shortDayOfWeek: (e.shortDayOfWeek !== undefined && e.shortDayOfWeek !== null) ? Number(e.shortDayOfWeek) : existing.shortDayOfWeek,
                 standardDailyMinutes: (e.standardDailyMinutes !== undefined && e.standardDailyMinutes !== null) ? Number(e.standardDailyMinutes) : existing.standardDailyMinutes,
             });
-        } else {
-            map.set(id, { ...e, id });
-        }
+        } else { map.set(id, { ...e, id }); }
     });
     saveEmployees(Array.from(map.values()));
 };
 
-export const mergeExternalTransactions = (external: BankTransaction[]) => {
-    if (!Array.isArray(external)) return;
-    const allStr = localStorage.getItem(STORAGE_KEY_TRANSACTIONS) || '[]';
-    let local: BankTransaction[] = [];
-    try { local = JSON.parse(allStr); } catch {}
-    const map = new Map(local.map(t => [String(t.id), t]));
-    external.forEach(t => map.set(String(t.id), t));
-    localStorage.setItem(STORAGE_KEY_TRANSACTIONS, JSON.stringify(Array.from(map.values())));
-};
-
 export const deleteEmployee = (id: string) => {
-  const employees = getEmployees().filter(e => String(e.id) !== String(id));
-  saveEmployees(employees);
-  const allRecords = getAllRecords().filter(r => String(r.employeeId) !== String(id));
-  saveAllRecords(allRecords);
+  saveEmployees(getEmployees().filter(e => String(e.id) !== String(id)));
+  saveAllRecords(getAllRecords().filter(r => String(r.employeeId) !== String(id)));
 };
 
 export const updateEmployee = (employee: Employee) => {
   const employees = getEmployees();
   const index = employees.findIndex(e => String(e.id) === String(employee.id));
-  if (index !== -1) {
-    employees[index] = { ...employees[index], ...employee };
-    saveEmployees(employees);
+  if (index !== -1) { 
+      employees[index] = { ...employees[index], ...employee }; 
+      saveEmployees(employees); 
   }
 };
 
@@ -183,13 +150,39 @@ export const addEmployee = (employee: Omit<Employee, 'id'>): Employee => {
 };
 
 export const getTodayRecord = (employeeId: string, date: string): DailyRecord => {
-  const records = getRecords(employeeId);
-  return records.find(r => r.date === date) || {
-    date,
-    employeeId,
-    entry: '', lunchStart: '', lunchEnd: '', snackStart: '', snackEnd: '', exit: '',
-    totalMinutes: 0, balanceMinutes: 0
+  return getRecords(employeeId).find(r => r.date === date) || { 
+      date, employeeId, entry: '', lunchStart: '', lunchEnd: '', exit: '', 
+      totalMinutes: 0, balanceMinutes: 0 
   };
+};
+
+export const resetBankBalance = async (employeeId: string) => {
+  saveAllRecords(getAllRecords().filter(r => String(r.employeeId) !== String(employeeId)));
+  const employees = getEmployees();
+  const empIdx = employees.findIndex(e => String(e.id) === String(employeeId));
+  if (empIdx !== -1) { 
+      employees[empIdx].bankStartDate = format(new Date(), 'yyyy-MM-dd'); 
+      saveEmployees(employees); 
+  }
+};
+
+export const mergeExternalRecords = (external: DailyRecord[]) => {
+    if (!Array.isArray(external)) return;
+    const local = getAllRecords();
+    const map = new Map<string, DailyRecord>();
+    local.forEach(r => map.set(`${r.date}_${r.employeeId}`, r));
+    external.forEach(r => map.set(`${r.date}_${r.employeeId}`, r));
+    saveAllRecords(Array.from(map.values()));
+};
+
+export const mergeExternalTransactions = (external: BankTransaction[]) => {
+    if (!Array.isArray(external)) return;
+    const allStr = localStorage.getItem(STORAGE_KEY_TRANSACTIONS) || '[]';
+    let local: BankTransaction[] = [];
+    try { local = JSON.parse(allStr); } catch {}
+    const map = new Map(local.map(t => [String(t.id), t]));
+    external.forEach(t => map.set(String(t.id), t));
+    localStorage.setItem(STORAGE_KEY_TRANSACTIONS, JSON.stringify(Array.from(map.values())));
 };
 
 export const addTransaction = (transaction: Omit<BankTransaction, 'id' | 'createdAt'>): BankTransaction => {
@@ -209,31 +202,10 @@ export const deleteTransaction = (id: string) => {
     localStorage.setItem(STORAGE_KEY_TRANSACTIONS, JSON.stringify(all.filter(t => t.id !== id)));
 };
 
-export const resetBankBalance = async (employeeId: string) => {
-  const allRecords = getAllRecords().filter(r => String(r.employeeId) !== String(employeeId));
-  saveAllRecords(allRecords);
-  const allTxStr = localStorage.getItem(STORAGE_KEY_TRANSACTIONS) || '[]';
-  try {
-    const allTx: BankTransaction[] = JSON.parse(allTxStr);
-    const filteredTx = allTx.filter(t => String(t.employeeId) !== String(employeeId));
-    localStorage.setItem(STORAGE_KEY_TRANSACTIONS, JSON.stringify(filteredTx));
-  } catch {}
-
-  const employees = getEmployees();
-  const empIdx = employees.findIndex(e => String(e.id) === String(employeeId));
-  if (empIdx !== -1) {
-      employees[empIdx].bankStartDate = format(new Date(), 'yyyy-MM-dd');
-      saveEmployees(employees);
-  }
-};
-
 export const getLocationConfig = (): LocationConfig => {
     try {
         const data = localStorage.getItem(STORAGE_KEY_LOCATION);
         return data ? JSON.parse(data) : { useFixed: false, fixedName: '' };
-    } catch {
-        return { useFixed: false, fixedName: '' };
-    }
+    } catch { return { useFixed: false, fixedName: '' }; }
 };
-
 export const saveLocationConfig = (config: LocationConfig) => localStorage.setItem(STORAGE_KEY_LOCATION, JSON.stringify(config));

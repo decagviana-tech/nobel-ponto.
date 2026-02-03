@@ -1,5 +1,5 @@
 
-export type TimeRecordType = 'entry' | 'lunchStart' | 'lunchEnd' | 'snackStart' | 'snackEnd' | 'exit';
+export type TimeRecordType = 'entry' | 'lunchStart' | 'lunchEnd' | 'exit';
 
 export interface Employee {
   id: string;
@@ -7,25 +7,24 @@ export interface Employee {
   role: string;
   pin: string;
   active: boolean;
-  shortDayOfWeek?: number; // 0-6 (0=Dom, 1=Seg, ..., 6=Sáb). Padrão é 6 (Sábado).
-  standardDailyMinutes?: number; // Minutos da jornada padrão (Ex: 480 para 8h, 360 para 6h)
-  bankStartDate?: string; // Data YYYY-MM-DD para início do cálculo do banco
+  shortDayOfWeek?: number;
+  standardDailyMinutes?: number;
+  bankStartDate?: string;
 }
 
+// Fix: Added snackStart and snackEnd as optional fields to match the tracking requirements and spreadsheet format.
 export interface DailyRecord {
-  date: string; // YYYY-MM-DD
+  date: string;
   employeeId: string;
-  entry: string; // HH:mm
-  lunchStart: string; // HH:mm
-  lunchEnd: string; // HH:mm
-  snackStart: string; // HH:mm
-  snackEnd: string; // HH:mm
-  exit: string; // HH:mm
+  entry: string;
+  lunchStart: string;
+  lunchEnd: string;
+  snackStart?: string;
+  snackEnd?: string;
+  exit: string;
   totalMinutes: number;
   balanceMinutes: number;
   location?: string;
-  latitude?: number;
-  longitude?: number;
 }
 
 export type TransactionType = 'PAYMENT' | 'CERTIFICATE' | 'ADJUSTMENT' | 'BONUS';

@@ -310,7 +310,8 @@ const App: React.FC = () => {
                 {currentView === ViewMode.DASHBOARD && currentEmployeeId && <BankDashboard key={`${refreshKey}-${currentEmployeeId}`} employeeId={currentEmployeeId} />}
                 {currentView === ViewMode.SHEET && currentEmployeeId && <SpreadsheetView key={`${refreshKey}-${currentEmployeeId}`} onUpdate={handleRecordUpdate} employeeId={currentEmployeeId} />}
                 {currentView === ViewMode.AI_ASSISTANT && currentEmployeeId && <AIAssistant employeeId={currentEmployeeId} />}
-                {currentView === ViewMode.EMPLOYEES && <EmployeeManager key={refreshKey} onUpdate={handleEmployeeUpdateFromManager} currentEmployeeId={currentEmployeeId} onSelectEmployee={setCurrentEmployeeId} />}
+                {/* Fix: Passed setCurrentEmployeeId via a closure to resolve Dispatch vs (id: string) => void mismatch (Error in App.tsx line 313) */}
+                {currentView === ViewMode.EMPLOYEES && <EmployeeManager key={refreshKey} onUpdate={handleEmployeeUpdateFromManager} currentEmployeeId={currentEmployeeId} onSelectEmployee={(id) => setCurrentEmployeeId(id)} />}
                 {currentView === ViewMode.SETTINGS && <Settings onConfigSaved={refreshData} />}
             </>
           )}

@@ -34,7 +34,6 @@ export const timeStringToMinutes = (timeStr: string): number | null => {
 export const normalizeDate = (dateStr: any): string => {
   if (!dateStr) return '';
   if (dateStr instanceof Date) return format(dateStr, 'yyyy-MM-dd');
-  
   if (typeof dateStr === 'string' && dateStr.includes('/')) {
       const parts = dateStr.split('/');
       if (parts.length === 3) {
@@ -44,28 +43,19 @@ export const normalizeDate = (dateStr: any): string => {
           return `${y}-${m}-${d}`;
       }
   }
-  
-  if (typeof dateStr === 'string' && dateStr.includes('T')) {
-      return dateStr.split('T')[0];
-  }
-
+  if (typeof dateStr === 'string' && dateStr.includes('T')) return dateStr.split('T')[0];
   return String(dateStr);
 };
 
 export const normalizeTimeFromSheet = (val: any): string => {
   if (!val || val === "00:00:00" || val === "0:00:00" || val === "" || val === null) return '';
   let str = String(val).trim();
-  
   if (str.includes('T')) {
       const timeMatch = str.match(/T(\d{2}:\d{2})/);
       if (timeMatch) return timeMatch[1];
   }
-  
   const parts = str.split(':');
-  if (parts.length >= 2) {
-      return `${parts[0].padStart(2, '0')}:${parts[1].padStart(2, '0')}`;
-  }
-  
+  if (parts.length >= 2) return `${parts[0].padStart(2, '0')}:${parts[1].padStart(2, '0')}`;
   return "";
 };
 
@@ -74,21 +64,13 @@ export const getTargetMinutesForDate = (dateIso: string, shortDayOfWeek: number 
         const normalized = normalizeDate(dateIso);
         const date = parseISO(normalized);
         if (!isValid(date)) return standardMinutes;
-
         const holidays = ['2025-01-01', '2025-04-18', '2025-04-21', '2025-05-01', '2025-09-07', '2025-10-12', '2025-11-02', '2025-11-15', '2025-11-20', '2025-12-25', '2026-01-01'];
         if (holidays.includes(normalized)) return 0;
-
         const dayOfWeek = getDay(date);
-        if (dayOfWeek === 0) return 0; // Domingo
-        
-        // Se for dia curto, geralmente é metade da jornada padrão ou 4h fixas
-        // Para manter a regra da Nobel, o dia curto é 4h (240 min)
+        if (dayOfWeek === 0) return 0;
         if (dayOfWeek === shortDayOfWeek) return 240; 
-        
-        return standardMinutes; // Retorna a jornada específica do funcionário (8h, 6h, etc)
-    } catch {
         return standardMinutes;
-    }
+    } catch { return standardMinutes; }
 };
 
 export const calculateDailyStats = (record: DailyRecord, shortDayOfWeek: number = 6, standardMinutes: number = 480): { total: number, balance: number, target: number } => {
@@ -96,40 +78,27 @@ export const calculateDailyStats = (record: DailyRecord, shortDayOfWeek: number 
     ent: timeStringToMinutes(record.entry),
     lI: timeStringToMinutes(record.lunchStart),
     lF: timeStringToMinutes(record.lunchEnd),
-    sI: timeStringToMinutes(record.snackStart),
-    sF: timeStringToMinutes(record.snackEnd),
     sai: timeStringToMinutes(record.exit)
   };
 
   let worked = 0;
-
   if (t.ent !== null) {
-      let endPoint = t.sai ?? t.sF ?? t.sI ?? t.lF ?? t.lI;
-      
+      let endPoint = t.sai ?? t.lF ?? t.lI;
       if (endPoint === null && isToday(parseISO(record.date))) {
           const now = new Date();
           endPoint = now.getHours() * 60 + now.getMinutes();
       }
-
       if (endPoint !== null && endPoint > t.ent) {
           worked = (endPoint - t.ent);
-          
           if (t.lI !== null && t.lF !== null && t.lF > t.lI) worked -= (t.lF - t.lI);
           else if (t.lI !== null && isToday(parseISO(record.date)) && endPoint > t.lI && t.lF === null) {
               worked -= (endPoint - t.lI);
-          }
-          
-          if (t.sI !== null && t.sF !== null && t.sF > t.sI) worked -= (t.sF - t.sI);
-          else if (t.sI !== null && isToday(parseISO(record.date)) && endPoint > t.sI && t.sF === null) {
-              worked -= (endPoint - t.sI);
           }
       }
   }
 
   const target = getTargetMinutesForDate(record.date, shortDayOfWeek, standardMinutes);
-  const balance = worked - target;
-  
-  return { total: Math.max(0, worked), target: target, balance: balance };
+  return { total: Math.max(0, worked), target: target, balance: worked - target };
 };
 
 export const getTodayString = () => format(new Date(), 'yyyy-MM-dd');
