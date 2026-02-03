@@ -1,17 +1,17 @@
 
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
-import { ViewMode, Employee, DailyRecord } from './types.ts';
+import { ViewMode, Employee, DailyRecord } from './types';
 
-// Imports de Componentes com extensões para evitar erro de resolução no Vite
-import { TimeClock } from './components/TimeClock.tsx';
-import { SpreadsheetView } from './components/SpreadsheetView.tsx';
-import { BankDashboard } from './components/BankDashboard.tsx';
-import { AIAssistant } from './components/AIAssistant.tsx';
-import { EmployeeManager } from './components/EmployeeManager.tsx';
-import { Settings } from './components/Settings.tsx';
-import { PinModal } from './components/PinModal.tsx';
+// Componentes
+import { TimeClock } from './components/TimeClock';
+import { SpreadsheetView } from './components/SpreadsheetView';
+import { BankDashboard } from './components/BankDashboard';
+import { AIAssistant } from './components/AIAssistant';
+import { EmployeeManager } from './components/EmployeeManager';
+import { Settings } from './components/Settings';
+import { PinModal } from './components/PinModal';
 
-// Imports de Serviços
+// Serviços
 import { 
   getEmployees, 
   getGoogleConfig, 
@@ -20,13 +20,13 @@ import {
   mergeExternalEmployees, 
   mergeExternalTransactions, 
   getBankBalance 
-} from './services/storageService.ts';
+} from './services/storageService';
 import { 
   readSheetData, 
   readEmployeesFromSheet, 
   readTransactionsFromSheet,
   syncRowToSheet
-} from './services/googleSheetsService.ts';
+} from './services/googleSheetsService';
 
 import { 
   Clock, 
