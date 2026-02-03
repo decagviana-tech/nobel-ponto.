@@ -67,8 +67,8 @@ export const getTargetMinutesForDate = (dateIso: string, shortDayOfWeek: number 
         const holidays = ['2025-01-01', '2025-04-18', '2025-04-21', '2025-05-01', '2025-09-07', '2025-10-12', '2025-11-02', '2025-11-15', '2025-11-20', '2025-12-25', '2026-01-01'];
         if (holidays.includes(normalized)) return 0;
         const dayOfWeek = getDay(date);
-        if (dayOfWeek === 0) return 0;
-        if (dayOfWeek === shortDayOfWeek) return 240; 
+        if (dayOfWeek === 0) return 0; // Domingo
+        if (dayOfWeek === shortDayOfWeek) return 240; // Dia Curto (ex: Sábado = 4h)
         return standardMinutes;
     } catch { return standardMinutes; }
 };
@@ -85,33 +85,37 @@ export const calculateDailyStats = (record: DailyRecord, shortDayOfWeek: number 
 
   let worked = 0;
   if (t.ent !== null) {
-      let endPoint = t.sai ?? t.sF ?? t.sI ?? t.lF ?? t.lI;
+      let endPoint = t.sai ?? t.sF ?? t.sI ?? t.lF ?? t.lI ?? t.ent;
+      
+      // Se ainda não bateu a saída definitiva e é hoje, calcula em tempo real
       if (t.sai === null && isToday(parseISO(record.date))) {
           const now = new Date();
           endPoint = now.getHours() * 60 + now.getMinutes();
       }
       
-      if (endPoint !== null && endPoint > t.ent) {
+      if (endPoint > t.ent) {
           worked = (endPoint - t.ent);
           
-          // Desconto do Almoço
-          if (t.lI !== null && t.lF !== null && t.lF > t.lI) {
-              worked -= (t.lF - t.lI);
-          } else if (t.lI !== null && t.lF === null && endPoint > t.lI) {
-              worked -= (endPoint - t.lI);
+          // Desconto do Almoço (real ou projetado se ainda estiver no almoço)
+          if (t.lI !== null) {
+              const lEnd = t.lF ?? endPoint;
+              if (lEnd > t.lI) worked -= (lEnd - t.lI);
           }
 
-          // Desconto do Lanche (os 15 minutos ou o tempo real registrado)
-          if (t.sI !== null && t.sF !== null && t.sF > t.sI) {
-              worked -= (t.sF - t.sI);
-          } else if (t.sI !== null && t.sF === null && endPoint > t.sI) {
-              worked -= (endPoint - t.sI);
+          // Desconto do Lanche (real ou os 15 min regulamentares se estiver no lanche)
+          if (t.sI !== null) {
+              const sEnd = t.sF ?? endPoint;
+              if (sEnd > t.sI) worked -= (sEnd - t.sI);
           }
       }
   }
 
   const target = getTargetMinutesForDate(record.date, shortDayOfWeek, standardMinutes);
-  return { total: Math.max(0, worked), target: target, balance: worked - target };
+  return { 
+    total: Math.max(0, worked), 
+    target: target, 
+    balance: Math.max(0, worked) - target 
+  };
 };
 
 export const getTodayString = () => format(new Date(), 'yyyy-MM-dd');

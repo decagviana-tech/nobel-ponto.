@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { ViewMode, Employee, DailyRecord } from './types';
 import { TimeClock } from './components/TimeClock';
@@ -32,7 +33,6 @@ import {
   Building2, 
   Users, 
   Loader2,
-  ShieldAlert,
   UserPlus,
   CloudDownload,
   Lock,
@@ -57,7 +57,6 @@ const App: React.FC = () => {
   const [pendingEmployeeId, setPendingEmployeeId] = useState<string | null>(null);
   const [isInitializing, setIsInitializing] = useState(true);
 
-  // Controle de Trava de Sincronização
   const syncLockRef = useRef<number>(0); 
   const hasInitializedSelection = useRef(false);
 
@@ -69,7 +68,7 @@ const App: React.FC = () => {
   }, []);
 
   const performSync = useCallback(async (silent: boolean = false, force: boolean = false) => {
-    // Se a trava estiver ativa, não baixa dados da nuvem (evita o "pulo" de volta)
+    // Trava de sincronização para evitar sobrescrever dados recém-salvos
     if (Date.now() < syncLockRef.current && !force) return;
 
     const config = getGoogleConfig();
@@ -85,7 +84,6 @@ const App: React.FC = () => {
       const sheetData = results[1].status === 'fulfilled' ? (results[1] as any).value : null;
       const sheetTransactions = results[2].status === 'fulfilled' ? (results[2] as any).value : null;
       
-      // Fix: Removed 'force' argument as mergeExternalEmployees only accepts 1 argument
       if (sheetEmployees) mergeExternalEmployees(sheetEmployees);
       if (sheetData) mergeExternalRecords(sheetData);
       if (sheetTransactions) mergeExternalTransactions(sheetTransactions);
@@ -93,7 +91,7 @@ const App: React.FC = () => {
       setLastSyncTime(new Date());
       refreshData();
     } catch (e) {
-      if (!silent) console.warn("Sincronização pendente.");
+      if (!silent) console.warn("Sincronização pendente ou erro na rede.");
     } finally {
       if (!silent) setIsSyncing(false);
     }
@@ -127,7 +125,7 @@ const App: React.FC = () => {
       }
     };
     initialize();
-  }, []);
+  }, [performSync]);
 
   useEffect(() => {
     const interval = setInterval(() => performSync(true), 60000);
@@ -150,12 +148,9 @@ const App: React.FC = () => {
     }
   };
 
-  const handleEmployeeUpdateFromManager = async (emp?: Employee) => {
-      // ATIVA A TRAVA DE SINCRONIZAÇÃO POR 60 SEGUNDOS para dar tempo do Google processar o POST
+  const handleEmployeeUpdateFromManager = async () => {
       syncLockRef.current = Date.now() + 60000; 
       refreshData();
-      // IMPORTANTE: NÃO chamamos performSync(true, true) aqui, 
-      // pois ele baixaria os dados antigos da nuvem antes do Google terminar de atualizar!
   };
 
   const currentEmployee = useMemo(() => {
@@ -177,7 +172,7 @@ const App: React.FC = () => {
   };
 
   const handleSelectEmployee = (id: string) => {
-      const selectedEmp = employees.find(e => e.id === id);
+      const selectedEmp = employees.find(e => String(e.id) === String(id));
       const isManager = selectedEmp?.role.toLowerCase().includes('gerente') || selectedEmp?.pin === '9999';
       
       if (isManager) {
@@ -209,7 +204,7 @@ const App: React.FC = () => {
       <div className="min-h-screen bg-slate-900 flex flex-col items-center justify-center text-white p-6 text-center">
         <Loader2 size={48} className="animate-spin text-brand-500 mb-4" />
         <h1 className="text-xl font-black uppercase tracking-tighter">Nobel Ponto Inteligente</h1>
-        <p className="text-slate-400 text-[10px] mt-2 uppercase tracking-[0.3em] animate-pulse">Unificando Dados...</p>
+        <p className="text-slate-400 text-[10px] mt-2 uppercase tracking-[0.3em] animate-pulse">Sincronizando Estrutura Unificada...</p>
       </div>
     );
   }
@@ -220,8 +215,8 @@ const App: React.FC = () => {
         isOpen={isPinModalOpen}
         onClose={() => setIsPinModalOpen(false)}
         onSuccess={handlePinSuccess}
-        correctPin={pendingEmployeeId ? (employees.find(e => e.id === pendingEmployeeId)?.pin || '9999') : '9999'}
-        targetName={pendingEmployeeId ? (employees.find(e => e.id === pendingEmployeeId)?.name || 'Gerente') : 'Acesso Administrativo'}
+        correctPin={pendingEmployeeId ? (employees.find(e => String(e.id) === String(pendingEmployeeId))?.pin || '9999') : '9999'}
+        targetName={pendingEmployeeId ? (employees.find(e => String(e.id) === String(pendingEmployeeId))?.name || 'Gerente') : 'Acesso Administrativo'}
         isAdminOnly={pendingView === ViewMode.EMPLOYEES || pendingView === ViewMode.SETTINGS}
       />
 
@@ -259,7 +254,7 @@ const App: React.FC = () => {
                 {isUserMenuOpen && (
                     <div className="absolute left-2 right-2 top-full mt-2 bg-white rounded-xl shadow-2xl border z-50 p-2 max-h-60 overflow-auto">
                     {employees.map(emp => (
-                        <button key={emp.id} onClick={() => handleSelectEmployee(emp.id)} className={`w-full text-left p-3 rounded-lg text-xs mb-1 transition-all flex items-center justify-between ${currentEmployeeId === emp.id ? 'bg-brand-50 text-brand-700 font-black' : 'hover:bg-slate-50 text-slate-600 font-bold'}`}>
+                        <button key={emp.id} onClick={() => handleSelectEmployee(emp.id)} className={`w-full text-left p-3 rounded-lg text-xs mb-1 transition-all flex items-center justify-between ${String(currentEmployeeId) === String(emp.id) ? 'bg-brand-50 text-brand-700 font-black' : 'hover:bg-slate-50 text-slate-600 font-bold'}`}>
                             <span>{emp.name}</span>
                             {emp.role.toLowerCase().includes('gerente') && <Lock size={12} className="opacity-30" />}
                         </button>
@@ -288,10 +283,10 @@ const App: React.FC = () => {
                 className={`w-full flex items-center justify-center gap-2 p-3 rounded-2xl text-[10px] font-black tracking-widest uppercase transition-all duration-300 active:scale-95 shadow-xl ${isSyncing ? 'bg-slate-100 text-slate-400' : 'bg-brand-600 text-white hover:bg-brand-700 shadow-brand-200'}`}
             >
                 {isSyncing ? <RefreshCcw size={14} className="animate-spin" /> : <CloudLightning size={14} />} 
-                {isSyncing ? 'SINCRONIZANDO...' : 'UNIFICAR NUVEM'}
+                {isSyncing ? 'SINCRONIZANDO...' : 'SINCRONIA TOTAL'}
             </button>
             {lastSyncTime && (
-                <p className="text-[9px] text-center text-slate-400 font-bold uppercase tracking-widest">Sincronia: {lastSyncTime.toLocaleTimeString()}</p>
+                <p className="text-[9px] text-center text-slate-400 font-bold uppercase tracking-widest">Última: {lastSyncTime.toLocaleTimeString()}</p>
             )}
         </div>
       </div>
@@ -302,7 +297,14 @@ const App: React.FC = () => {
             <div className="h-full flex flex-col items-center justify-center text-center p-8 animate-fade-in">
                 <div className="bg-slate-100 p-8 rounded-[3rem] mb-6"><Users size={80} className="text-slate-300 mx-auto" /></div>
                 <h2 className="text-2xl font-black text-slate-800 uppercase tracking-tighter mb-2">Sem Funcionários</h2>
-                <div className="flex flex-col sm:flex-row gap-4"><button onClick={() => setCurrentView(ViewMode.EMPLOYEES)} className="bg-brand-600 text-white px-8 py-4 rounded-2xl font-black text-xs uppercase tracking-widest shadow-xl flex items-center gap-3"><UserPlus size={18} /> Cadastrar Primeiro</button><button onClick={() => performSync(false, true)} className="bg-slate-900 text-white px-8 py-4 rounded-2xl font-black text-xs uppercase tracking-widest shadow-xl flex items-center gap-3"><CloudDownload size={18} /> Baixar da Planilha</button></div>
+                <div className="flex flex-col sm:flex-row gap-4">
+                  <button onClick={() => setCurrentView(ViewMode.EMPLOYEES)} className="bg-brand-600 text-white px-8 py-4 rounded-2xl font-black text-xs uppercase tracking-widest shadow-xl flex items-center gap-3">
+                    <UserPlus size={18} /> Cadastrar
+                  </button>
+                  <button onClick={() => performSync(false, true)} className="bg-slate-900 text-white px-8 py-4 rounded-2xl font-black text-xs uppercase tracking-widest shadow-xl flex items-center gap-3">
+                    <CloudDownload size={18} /> Baixar Nuvem
+                  </button>
+                </div>
             </div>
           ) : (
             <>
