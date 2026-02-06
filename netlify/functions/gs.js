@@ -1,77 +1,81 @@
-/**
- * Netlify Function: Proxy para Google Apps Script (evita CORS no navegador)
- * GET  /.netlify/functions/gs?scriptUrl=...&action=getEmployees
- * POST /.netlify/functions/gs?scriptUrl=...&action=syncRow  (body JSON será repassado)
- */
-export default async (request, context) => {
-  try {
-    const url = new URL(request.url);
-    const scriptUrl = url.searchParams.get('scriptUrl') || '';
-    const action = url.searchParams.get('action') || '';
+// Netlify Function: Proxy para Google Apps Script (evita CORS no navegador)
+// GET  /.netlify/functions/gs?action=getEmployees
+// POST /.netlify/functions/gs?action=syncRow   (body JSON)
 
-    // Validação simples para evitar abuso
-    if (!scriptUrl.startsWith('https://script.google.com/macros/s/')) {
-      return new Response(JSON.stringify({ error: 'Invalid scriptUrl' }), {
-        status: 400,
-        headers: {
-          'Content-Type': 'application/json',
-          'Access-Control-Allow-Origin': '*',
-        },
-      });
+const corsHeaders = {
+  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Methods": "GET,POST,OPTIONS",
+  "Access-Control-Allow-Headers": "Content-Type",
+  "Cache-Control": "no-store",
+};
+
+function json(status, obj) {
+  return new Response(JSON.stringify(obj), {
+    status,
+    headers: { ...corsHeaders, "Content-Type": "application/json; charset=utf-8" },
+  });
+}
+
+export default async (request) => {
+  try {
+    // Preflight
+    if (request.method === "OPTIONS") {
+      return new Response(null, { status: 204, headers: corsHeaders });
     }
-    if (!action) {
-      return new Response(JSON.stringify({ error: 'Missing action' }), {
-        status: 400,
-        headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' },
-      });
+
+    const url = new URL(request.url);
+    const action = url.searchParams.get("action") || "";
+
+    // Aceita scriptUrl pela query OU por env var do Netlify
+    const scriptUrl =
+      url.searchParams.get("scriptUrl") ||
+      process.env.VITE_GOOGLE_SCRIPT_URL ||
+      process.env.GOOGLE_SCRIPT_URL ||
+      "";
+
+    if (!action) return json(400, { ok: false, error: "Missing action" });
+    if (!scriptUrl) return json(500, { ok: false, error: "Missing script URL (set VITE_GOOGLE_SCRIPT_URL on Netlify)" });
+
+    if (!scriptUrl.startsWith("https://script.google.com/macros/s/")) {
+      return json(400, { ok: false, error: "Invalid scriptUrl", scriptUrl });
     }
 
     const target = new URL(scriptUrl);
-    // mantém qualquer query original do deployment e adiciona action
-    target.searchParams.set('action', action);
 
-    // Copia outros params (exceto scriptUrl)
+    // garante action no Apps Script
+    target.searchParams.set("action", action);
+
+    // copia outros params (menos action/scriptUrl)
     for (const [k, v] of url.searchParams.entries()) {
-      if (k === 'scriptUrl' || k === 'action') continue;
+      if (k === "action" || k === "scriptUrl") continue;
       target.searchParams.set(k, v);
     }
 
     const init = {
       method: request.method,
-      headers: {
-        'Accept': 'application/json',
-      },
+      headers: { Accept: "application/json" },
     };
 
-    if (request.method !== 'GET' && request.method !== 'HEAD') {
-      const ct = request.headers.get('content-type') || 'application/json';
-      init.headers['Content-Type'] = ct;
+    // Forward body em POST/PUT/PATCH
+    if (request.method !== "GET" && request.method !== "HEAD") {
+      const ct = request.headers.get("content-type") || "application/json";
+      init.headers["Content-Type"] = ct;
       init.body = await request.text();
     }
 
     const resp = await fetch(target.toString(), init);
-
-    // Apps Script às vezes responde text/plain; tentamos repassar como JSON quando possível
     const text = await resp.text();
-    let body = text;
-    let contentType = resp.headers.get('content-type') || 'text/plain; charset=utf-8';
 
-    // Se parece JSON, normalize content-type
-    const looksJson = text && (text.trim().startsWith('{') || text.trim().startsWith('['));
-    if (looksJson) contentType = 'application/json; charset=utf-8';
+    // tenta preservar content-type
+    let contentType = resp.headers.get("content-type") || "text/plain; charset=utf-8";
+    const looksJson = text && (text.trim().startsWith("{") || text.trim().startsWith("["));
+    if (looksJson) contentType = "application/json; charset=utf-8";
 
-    return new Response(body, {
+    return new Response(text, {
       status: resp.status,
-      headers: {
-        'Content-Type': contentType,
-        'Access-Control-Allow-Origin': '*',
-        'Cache-Control': 'no-store',
-      },
+      headers: { ...corsHeaders, "Content-Type": contentType },
     });
   } catch (err) {
-    return new Response(JSON.stringify({ error: 'Proxy error', detail: String(err) }), {
-      status: 500,
-      headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' },
-    });
+    return json(500, { ok: false, error: "Proxy error", detail: String(err) });
   }
 };
