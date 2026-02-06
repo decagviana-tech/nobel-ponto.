@@ -22,16 +22,8 @@ export const AIAssistant: React.FC<Props> = ({ employeeId }) => {
     setErrorType('NONE');
     setResponse(null);
     const result = await analyzeTimesheet(getRecords(employeeId), getBankBalance(employeeId), query);
-   if (result === "ERRO_CHAVE_AUSENTE") {
-  setErrorType('AUTH');
-} else {
-  const text =
-    typeof result === 'string'
-      ? result
-      : (result?.text ?? result?.message ?? JSON.stringify(result, null, 2));
-
-  setResponse(text);
-}
+    if (result === "ERRO_CHAVE_AUSENTE") setErrorType('AUTH');
+    else setResponse(result);
     setLoading(false);
     setQuery('');
   };

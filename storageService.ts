@@ -23,13 +23,34 @@ export const getEmployees = (): Employee[] => {
 export const saveEmployees = (employees: Employee[]) => localStorage.setItem(STORAGE_KEY_EMPLOYEES, JSON.stringify(employees));
 
 export const getGoogleConfig = (): GoogleConfig => {
+  // Fallback: allow a default Script URL via env var (Netlify/Vite), so new devices work
+  const envUrl =
+    (import.meta as any)?.env?.VITE_GOOGLE_SCRIPT_URL ||
+    (import.meta as any)?.env?.GOOGLE_SCRIPT_URL ||
+    '';
+  const fallback: GoogleConfig = { scriptUrl: envUrl || '', enabled: !!envUrl };
+
   try {
     const data = localStorage.getItem(STORAGE_KEY_CONFIG);
-    return data ? JSON.parse(data) : { scriptUrl: '', enabled: false };
-  } catch { return { scriptUrl: '', enabled: false }; }
+    if (!data) return fallback;
+
+    const parsed = JSON.parse(data);
+    const scriptUrl = String(parsed?.scriptUrl || fallback.scriptUrl || '');
+    // If we have a URL, default to enabled=true even if older cache stored enabled=false
+    const enabled = parsed?.enabled === false ? !!scriptUrl : true;
+    return { scriptUrl, enabled };
+  } catch {
+    return fallback;
+  }
 };
 
-export const saveGoogleConfig = (config: GoogleConfig) => localStorage.setItem(STORAGE_KEY_CONFIG, JSON.stringify(config));
+
+export const saveGoogleConfig = (config: GoogleConfig) => {
+  const scriptUrl = String(config?.scriptUrl || '');
+  const enabled = config?.enabled === false ? false : !!scriptUrl;
+  localStorage.setItem(STORAGE_KEY_CONFIG, JSON.stringify({ scriptUrl, enabled }));
+};
+
 
 export const getAllRecords = (): DailyRecord[] => {
     try {

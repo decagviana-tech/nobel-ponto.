@@ -3,6 +3,17 @@ import { DailyRecord, Employee, BankTransaction } from './types.ts';
 import { minutesToHHMM, normalizeTimeFromSheet } from './utils.ts';
 
 /**
+ * Usa um proxy same-origin (Netlify Function) para evitar CORS do Apps Script.
+ * Endpoint: /.netlify/functions/gs
+ */
+const buildProxyUrl = (scriptUrl: string, action: string, extraParams: Record<string, string> = {}) => {
+  const base = '/.netlify/functions/gs';
+  const params = new URLSearchParams({ scriptUrl, action, ...extraParams });
+  return `${base}?${params.toString()}`;
+};
+
+
+/**
  * Helper para chamadas GET com tratamento de erro silencioso
  */
 const fetchWithRetry = async (url: string) => {
@@ -26,7 +37,7 @@ const fetchWithRetry = async (url: string) => {
 
 export const readEmployeesFromSheet = async (scriptUrl: string): Promise<Employee[] | null> => {
     if (!scriptUrl || !scriptUrl.startsWith('http')) return null;
-    const data = await fetchWithRetry(`${scriptUrl}?action=getEmployees`);
+    const data = await fetchWithRetry(buildProxyUrl(scriptUrl, 'getEmployees'));
     if (!Array.isArray(data)) return null;
     
     return data.map((emp: any) => ({
@@ -41,7 +52,7 @@ export const readEmployeesFromSheet = async (scriptUrl: string): Promise<Employe
 
 export const readSheetData = async (scriptUrl: string): Promise<DailyRecord[] | null> => {
     if (!scriptUrl || !scriptUrl.startsWith('http')) return null;
-    const data = await fetchWithRetry(`${scriptUrl}?action=getRecords`);
+    const data = await fetchWithRetry(buildProxyUrl(scriptUrl, 'getRecords'));
     if (!Array.isArray(data)) return null;
     
     return data.map((rec: any) => ({
@@ -58,7 +69,7 @@ export const readSheetData = async (scriptUrl: string): Promise<DailyRecord[] | 
 
 export const readTransactionsFromSheet = async (scriptUrl: string): Promise<BankTransaction[] | null> => {
     if (!scriptUrl || !scriptUrl.startsWith('http')) return null;
-    const data = await fetchWithRetry(`${scriptUrl}?action=getTransactions`);
+    const data = await fetchWithRetry(buildProxyUrl(scriptUrl, 'getTransactions'));
     if (!Array.isArray(data)) return null;
     
     return data.map((t: any) => ({
@@ -74,11 +85,10 @@ export const syncRowToSheet = async (scriptUrl: string, record: DailyRecord, emp
     const totalFormatted = minutesToHHMM(record.totalMinutes);
     const balanceFormatted = minutesToHHMM(record.balanceMinutes);
 
-    await fetch(scriptUrl, {
+    await fetch(buildProxyUrl(scriptUrl, 'syncRow'), {
         method: 'POST',
-        mode: 'no-cors', 
-        keepalive: true, 
-        headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+        keepalive: true,
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
             action: 'syncRow',
             data: { 
@@ -100,12 +110,11 @@ export const syncRowToSheet = async (scriptUrl: string, record: DailyRecord, emp
 export const syncEmployeeToSheet = async (scriptUrl: string, employee: Employee) => {
     if (!scriptUrl || !window.navigator.onLine) return;
     try {
-        await fetch(scriptUrl, {
-            method: 'POST',
-            mode: 'no-cors',
-            keepalive: true,
-            headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-            body: JSON.stringify({
+        await fetch(buildProxyUrl(scriptUrl, 'syncRow'), {
+        method: 'POST',
+        keepalive: true,
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
                 action: 'syncEmployee',
                 data: { 
                     ...employee, 

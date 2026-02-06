@@ -5,13 +5,13 @@ import { GoogleConfig } from './types.ts';
 import { Database, Trash2, ShieldAlert } from 'lucide-react';
 
 export const Settings = ({ onConfigSaved }: any) => {
-  const [config, setConfig] = useState<GoogleConfig>({ scriptUrl: '', enabled: false });
+  const [config, setConfig] = useState<GoogleConfig>({ scriptUrl: '', enabled: true });
   const [status, setStatus] = useState<'idle' | 'saved'>('idle');
 
   useEffect(() => { setConfig(getGoogleConfig()); }, []);
 
   const handleSave = () => {
-    saveGoogleConfig(config);
+    saveGoogleConfig({ ...config, enabled: !!config.scriptUrl });
     setStatus('saved');
     onConfigSaved();
     setTimeout(() => setStatus('idle'), 2000);
